@@ -1,5 +1,8 @@
 # S3 Photo Browser
 
+![Docker Compose Tests](https://github.com/yetanotherchris/s3-photobrowser/workflows/Docker%20Compose%20Integration%20Test/badge.svg)
+![Tests](https://github.com/yetanotherchris/s3-photobrowser/workflows/Tests/badge.svg)
+
 A Google Photos-style web application for browsing, viewing, and managing photos and videos stored in S3-compatible storage.
 
 ## Features
