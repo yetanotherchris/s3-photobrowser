@@ -18,7 +18,7 @@ app.use(cors());
 app.use(express.json());
 
 // Request logging
-app.use((req: Request, res: Response, next: NextFunction) => {
+app.use((req: Request, _res: Response, next: NextFunction) => {
   console.log(`${req.method} ${req.path}`);
   next();
 });
@@ -165,7 +165,7 @@ app.delete('/api/photos/:photoId', async (req: Request, res: Response) => {
  * POST /api/photos/refresh
  * Re-index S3 bucket
  */
-app.post('/api/photos/refresh', async (req: Request, res: Response) => {
+app.post('/api/photos/refresh', async (_req: Request, res: Response) => {
   try {
     const result = await photoIndexer.indexAllPhotos();
 
@@ -185,7 +185,7 @@ app.post('/api/photos/refresh', async (req: Request, res: Response) => {
  * GET /api/photos/dates
  * Get all dates with photo counts
  */
-app.get('/api/photos/dates', async (req: Request, res: Response) => {
+app.get('/api/photos/dates', async (_req: Request, res: Response) => {
   try {
     const dates = database.getDateCounts();
     res.json({ dates });
@@ -199,7 +199,7 @@ app.get('/api/photos/dates', async (req: Request, res: Response) => {
  * GET /api/cache/stats
  * Get cache statistics
  */
-app.get('/api/cache/stats', async (req: Request, res: Response) => {
+app.get('/api/cache/stats', async (_req: Request, res: Response) => {
   try {
     const stats = cacheManager.getStats();
     res.json(stats);
@@ -213,7 +213,7 @@ app.get('/api/cache/stats', async (req: Request, res: Response) => {
  * POST /api/cache/clear
  * Clear cache
  */
-app.post('/api/cache/clear', async (req: Request, res: Response) => {
+app.post('/api/cache/clear', async (_req: Request, res: Response) => {
   try {
     await cacheManager.clearCache();
     res.json({ success: true });
@@ -227,7 +227,7 @@ app.post('/api/cache/clear', async (req: Request, res: Response) => {
  * GET /api/health
  * Health check endpoint
  */
-app.get('/api/health', async (req: Request, res: Response) => {
+app.get('/api/health', async (_req: Request, res: Response) => {
   try {
     const s3Connected = await s3Client.testConnection();
     const cacheWritable = await cacheManager.isWritable();
@@ -253,13 +253,13 @@ app.get('/api/health', async (req: Request, res: Response) => {
 if (config.server.nodeEnv === 'production') {
   app.use(express.static(path.join(process.cwd(), 'dist/client')));
 
-  app.get('*', (req: Request, res: Response) => {
+  app.get('*', (_req: Request, res: Response) => {
     res.sendFile(path.join(process.cwd(), 'dist/client/index.html'));
   });
 }
 
 // Error handling middleware
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error('Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });

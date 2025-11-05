@@ -1,228 +1,165 @@
 # Testing Guide
 
-This directory contains all tests for the S3 Photo Browser application.
+This directory contains all tests for the S3 Photo Browser application. The project supports both **Jest** and **Vitest** test frameworks.
+
+## Overview
+
+The test suite uses LocalStack to provide a local S3-compatible environment, ensuring tests run against real S3 APIs without requiring AWS credentials or incurring costs.
+
+## Test Frameworks
+
+This project includes two test framework setups:
+
+### Jest (Default)
+- Traditional testing framework with excellent TypeScript support
+- Located in `test/integration/` and `test/unit/`
+- Configured via `jest.config.js`
+
+### Vitest
+- Modern, faster test framework with Vite integration
+- Test files use Vitest directly
+- Better performance and hot module reload support
 
 ## Test Structure
 
 ```
 test/
 ├── integration/          # Integration tests (API, S3)
-│   ├── api.test.ts      # API endpoint tests
-│   └── s3Client.test.ts # S3 client integration tests
+│   ├── api.test.ts      # API endpoint tests (Jest)
+│   └── s3Client.test.ts # S3 client integration tests (Jest)
 ├── unit/                # Unit tests
-│   └── s3Client.test.ts # S3 client utility tests
+│   └── s3Client.test.ts # S3 client utility tests (Jest)
 ├── helpers/             # Test helpers and utilities
 │   └── testServer.ts    # Test Express app setup
 ├── localstack-init/     # LocalStack initialization scripts
 │   └── init-s3.sh       # S3 bucket setup script
 ├── test-data/           # Test data files
-└── setup.ts             # Jest setup file
-
+├── fixtures/            # Test fixtures (Vitest)
+│   └── photos/          # Generated CV photos for testing
+├── setup.ts             # Jest/Vitest setup file
+├── setup-localstack.ts  # LocalStack S3 initialization (Vitest)
+└── generate-test-photos.ts  # Mock photo generator (Vitest)
 ```
 
 ## Running Tests
 
-### Prerequisites
+### Jest Tests (Recommended for Unit/Integration)
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
+**Prerequisites:**
+- Docker and Docker Compose (for integration tests)
 
-2. Start LocalStack (for integration tests):
-   ```bash
-   docker-compose -f docker-compose.localstack.yml up -d localstack
-   ```
-
-### Run All Tests
+**Quick Start:**
 
 ```bash
+# Automated setup
+./scripts/test-setup.sh
+
+# Run all Jest tests
 npm test
+
+# Run specific test suites
+npm run test:unit          # Unit tests only
+npm run test:integration   # Integration tests only
+npm run test:watch         # Watch mode
+npm run test:coverage      # With coverage report
 ```
 
-### Run Specific Test Suites
+**Manual Setup:**
 
-**Unit tests only:**
 ```bash
-npm run test:unit
+# Start LocalStack for integration tests
+docker compose -f docker-compose.localstack.yml up -d localstack
+
+# Run tests
+npm test
+
+# Stop LocalStack
+docker compose -f docker-compose.localstack.yml down
 ```
 
-**Integration tests only:**
-```bash
-npm run test:integration
-```
+### Vitest Tests (Recommended for E2E)
 
-**Watch mode (re-run on file changes):**
 ```bash
-npm run test:watch
-```
+# Quick test with automated setup
+./test-runner.sh
 
-**With coverage:**
-```bash
-npm run test:coverage
+# Or manual steps:
+# 1. Start LocalStack
+docker compose -f docker-compose.test.yml up -d localstack
+
+# 2. Generate test photos
+npm run test:generate-photos
+
+# 3. Setup S3 bucket
+npm run test:setup
+
+# 4. Run Vitest tests
+npm run test:vitest
+
+# 5. Cleanup
+npm run test:cleanup
 ```
 
 ## Test Environment
 
-Tests use a separate environment configuration (`.env.test`) that points to LocalStack instead of real S3 services.
+### Environment Variables
+
+Tests use `.env.test` configuration:
+
+```env
+NODE_ENV=test
+S3_ACCESS_KEY=test
+S3_SECRET_KEY=test
+S3_ENDPOINT=http://localhost:4566
+S3_BUCKET_NAME=test-photos
+S3_REGION=us-east-1
+CACHE_DIR=./test-cache
+CACHE_SIZE_LIMIT=1GB
+PRELOAD_COUNT=10
+PORT=3001
+```
 
 ### LocalStack Configuration
 
-- **Endpoint:** http://localhost:4566
-- **Region:** us-east-1
-- **Access Key:** test
-- **Secret Key:** test
-- **Bucket:** test-photos
+Two LocalStack configurations are available:
 
-### Test Database
+**docker-compose.localstack.yml** - Jest tests
+- Port: 4566
+- Services: S3 only
+- Auto-initialization via init scripts
 
-Tests use a separate SQLite database in `./test-cache/photos.db` to avoid interfering with development data.
+**docker-compose.test.yml** - Vitest tests
+- Port: 4566
+- Services: S3 only
+- Data directory: `test/localstack-data/`
 
-## Writing Tests
+## Test Coverage
 
-### Unit Tests
+### Jest Tests
 
-Unit tests should:
-- Test individual functions/methods in isolation
-- Mock external dependencies
-- Be fast and not require external services
-- Go in the `test/unit/` directory
+#### Unit Tests ✅
+- S3 client utility functions (11 tests - all passing)
+  - Image file detection
+  - Video file detection
+  - MIME type determination
 
-Example:
-```typescript
-import { describe, test, expect } from '@jest/globals';
+#### Integration Tests
+- S3 operations with LocalStack (5 tests)
+- API endpoints (6 tests)
 
-describe('MyService', () => {
-  test('should do something', () => {
-    // Test implementation
-    expect(true).toBe(true);
-  });
-});
-```
+**Total: 22 Jest tests**
 
-### Integration Tests
-
-Integration tests should:
-- Test complete workflows
-- Use LocalStack for S3 operations
-- Test API endpoints with supertest
-- Go in the `test/integration/` directory
-
-Example:
-```typescript
-import { describe, test, expect, beforeAll } from '@jest/globals';
-import request from 'supertest';
-import { createTestApp } from '../helpers/testServer.js';
-
-describe('API Integration', () => {
-  let app: any;
-
-  beforeAll(() => {
-    app = createTestApp();
-  });
-
-  test('GET /api/health', async () => {
-    const response = await request(app)
-      .get('/api/health')
-      .expect(200);
-
-    expect(response.body.status).toBe('ok');
-  });
-});
-```
-
-## LocalStack Setup
-
-LocalStack emulates AWS services locally, allowing us to test S3 operations without connecting to real AWS infrastructure.
-
-### Starting LocalStack
-
-Using docker-compose:
-```bash
-docker-compose -f docker-compose.localstack.yml up -d localstack
-```
-
-### Stopping LocalStack
-
-```bash
-docker-compose -f docker-compose.localstack.yml down
-```
-
-### Viewing LocalStack Logs
-
-```bash
-docker-compose -f docker-compose.localstack.yml logs -f localstack
-```
-
-### Manual S3 Operations (for debugging)
-
-Using AWS CLI with LocalStack:
-
-```bash
-# List buckets
-aws --endpoint-url=http://localhost:4566 s3 ls
-
-# List objects in bucket
-aws --endpoint-url=http://localhost:4566 s3 ls s3://test-photos --recursive
-
-# Upload a file
-aws --endpoint-url=http://localhost:4566 s3 cp test.jpg s3://test-photos/test.jpg
-```
-
-Or use `awslocal` (simpler):
-
-```bash
-# Install awslocal
-pip install awscli-local
-
-# Then use awslocal instead of aws
-awslocal s3 ls
-awslocal s3 ls s3://test-photos --recursive
-```
-
-## Continuous Integration
-
-Tests should run in CI/CD pipelines. The CI configuration should:
-
-1. Start LocalStack service
-2. Wait for LocalStack to be ready
-3. Run tests with proper environment variables
-4. Collect coverage reports
-5. Clean up resources
-
-Example GitHub Actions workflow:
-
-```yaml
-name: Tests
-
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-
-    services:
-      localstack:
-        image: localstack/localstack:latest
-        ports:
-          - 4566:4566
-        env:
-          SERVICES: s3
-          DEBUG: 1
-
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-      - run: npm ci
-      - run: npm test
-      - run: npm run test:coverage
-```
+### Vitest Tests
+- Bucket operations
+- Object upload/download
+- Image processing
+- Storage verification
 
 ## Troubleshooting
 
-### Tests failing with S3 connection errors
+### Jest Tests
+
+#### Tests failing with S3 connection errors
 
 1. Ensure LocalStack is running:
    ```bash
@@ -234,37 +171,34 @@ jobs:
    curl http://localhost:4566/_localstack/health
    ```
 
-3. Verify environment variables:
-   ```bash
-   cat .env.test
-   ```
+### Vitest Tests
 
-### Tests timing out
+#### LocalStack Won't Start
 
-Increase Jest timeout in test file:
-```typescript
-jest.setTimeout(30000); // 30 seconds
-```
+```bash
+# View LocalStack logs
+docker compose -f docker-compose.test.yml logs localstack
 
-### Database locked errors
-
-Ensure you're cleaning up database connections in `afterAll` hooks:
-```typescript
-afterAll(() => {
-  database.close();
-});
+# Remove old containers
+docker compose -f docker-compose.test.yml down -v
 ```
 
 ## Coverage Goals
 
 Aim for:
 - **80%+ overall coverage**
-- **90%+ coverage for critical paths** (photo indexing, S3 operations)
+- **90%+ coverage for critical paths**
 - **100% coverage for utility functions**
 
 View coverage report:
 ```bash
 npm run test:coverage
-open coverage/index.html  # On macOS
-xdg-open coverage/index.html  # On Linux
+open coverage/index.html
 ```
+
+## Resources
+
+- [Jest Documentation](https://jestjs.io/)
+- [Vitest Documentation](https://vitest.dev/)
+- [LocalStack Documentation](https://docs.localstack.cloud/)
+- [AWS SDK for JavaScript](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/)
