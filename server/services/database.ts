@@ -245,6 +245,15 @@ class DatabaseService {
   }
 
   /**
+   * Get all photos (for checking indexed status)
+   * Returns only id and s3Key for performance
+   */
+  getAllPhotos(): Array<{ id: string; s3Key: string }> {
+    const stmt = this.db.prepare('SELECT id, s3Key FROM photos');
+    return stmt.all() as Array<{ id: string; s3Key: string }>;
+  }
+
+  /**
    * Convert database row to PhotoMetadata
    */
   private rowToPhoto(row: any): PhotoMetadata {

@@ -61,18 +61,24 @@ class PhotoIndexerService {
       `Initial indexing complete: ${indexed} indexed, ${failed} failed out of ${initialBatchSize}`
     );
 
-    // Start background indexing for remaining photos
-    if (hasBackgroundWork) {
+    // Start background indexing for remaining photos (if enabled)
+    const shouldStartBackgroundIndexing = hasBackgroundWork && config.indexing.enableBackgroundIndexing;
+    if (shouldStartBackgroundIndexing) {
       const remainingObjects = mediaObjects.slice(initialBatchSize);
       console.log(`Starting background indexing for ${remainingObjects.length} remaining photos...`);
       this.startBackgroundIndexing(remainingObjects);
+    } else if (hasBackgroundWork && !config.indexing.enableBackgroundIndexing) {
+      const unindexedCount = mediaObjects.length - initialBatchSize;
+      console.log(
+        `Background indexing disabled. ${unindexedCount} photos will be indexed on-demand when accessed.`
+      );
     }
 
     return {
       total: mediaObjects.length,
       indexed,
       failed,
-      backgroundIndexing: hasBackgroundWork,
+      backgroundIndexing: shouldStartBackgroundIndexing,
     };
   }
 
@@ -126,6 +132,76 @@ class PhotoIndexerService {
       isIndexing: this.backgroundIndexing,
       indexed: this.backgroundIndexStats.indexed,
       failed: this.backgroundIndexStats.failed,
+    };
+  }
+
+  /**
+   * Index a photo by its S3 key (on-demand)
+   * This is useful for indexing photos that were skipped during initial indexing
+   */
+  async indexPhotoByKey(s3Key: string): Promise<void> {
+    const objects = await s3Client.listAllObjects();
+    const object = objects.find((obj) => obj.key === s3Key);
+
+    if (!object) {
+      throw new Error(`Object not found in S3: ${s3Key}`);
+    }
+
+    await this.indexPhoto(object);
+  }
+
+  /**
+   * Index next batch of unindexed photos from S3
+   * This allows gradual indexing as users need more photos
+   */
+  async indexNextBatch(batchSize: number = 100): Promise<IndexResult> {
+    console.log(`Indexing next batch of ${batchSize} photos...`);
+
+    // Get all S3 objects
+    const objects = await s3Client.listAllObjects();
+    const mediaObjects = objects.filter(
+      (obj) => s3Client.isImage(obj.key) || s3Client.isVideo(obj.key)
+    );
+
+    // Get already indexed S3 keys
+    const allIndexedPhotos = database.getAllPhotos();
+    const indexedKeys = new Set(allIndexedPhotos.map((p) => p.s3Key));
+
+    // Find unindexed objects
+    const unindexedObjects = mediaObjects.filter((obj) => !indexedKeys.has(obj.key));
+
+    if (unindexedObjects.length === 0) {
+      console.log('No unindexed photos found');
+      return { total: mediaObjects.length, indexed: 0, failed: 0 };
+    }
+
+    // Index the next batch
+    const toIndex = unindexedObjects.slice(0, batchSize);
+    let indexed = 0;
+    let failed = 0;
+
+    for (const object of toIndex) {
+      try {
+        await this.indexPhoto(object);
+        indexed++;
+
+        if (indexed % 10 === 0) {
+          console.log(`Indexed ${indexed}/${toIndex.length} photos in batch...`);
+        }
+      } catch (error) {
+        console.error(`Failed to index ${object.key}:`, error);
+        failed++;
+      }
+    }
+
+    console.log(
+      `Batch indexing complete: ${indexed} indexed, ${failed} failed. ${unindexedObjects.length - toIndex.length} remain.`
+    );
+
+    return {
+      total: mediaObjects.length,
+      indexed,
+      failed,
     };
   }
 
