@@ -32,6 +32,10 @@ class PhotoIndexerService {
       (obj) => s3Client.isImage(obj.key) || s3Client.isVideo(obj.key)
     );
 
+    // Sort by lastModified date in descending order (newest first)
+    // This ensures the initial batch contains the most recent photos
+    mediaObjects.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+
     let indexed = 0;
     let failed = 0;
 
@@ -174,6 +178,9 @@ class PhotoIndexerService {
       console.log('No unindexed photos found');
       return { total: mediaObjects.length, indexed: 0, failed: 0 };
     }
+
+    // Sort unindexed objects by lastModified date (newest first)
+    unindexedObjects.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
 
     // Index the next batch
     const toIndex = unindexedObjects.slice(0, batchSize);
