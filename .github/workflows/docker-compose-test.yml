@@ -135,39 +135,68 @@ jobs:
 
       - name: Wait for LocalStack to be ready
         run: |
-          timeout 60 bash -c 'until docker compose -f docker-compose.ci.yml exec -T localstack curl -f http://localhost:4566/_localstack/health 2>/dev/null; do
-            echo "Waiting for LocalStack..."
-            sleep 2
+          echo "Waiting for LocalStack to be ready..."
+          sleep 10
+          timeout 90 bash -c 'until curl -f http://localhost:4566/_localstack/health 2>/dev/null | grep -q "s3"; do
+            echo "Still waiting for LocalStack..."
+            sleep 3
           done'
           echo "LocalStack is ready!"
+          curl http://localhost:4566/_localstack/health
 
       - name: Initialize S3 bucket
         run: |
-          docker compose -f docker-compose.ci.yml exec -T localstack sh -c '
-            aws --endpoint-url=http://localhost:4566 s3 mb s3://test-photos || true
-            echo "Bucket created. Listing buckets:"
-            aws --endpoint-url=http://localhost:4566 s3 ls
-          '
+          # Install AWS CLI
+          pip install awscli
+
+          # Create bucket using AWS CLI from host
+          aws --endpoint-url=http://localhost:4566 s3 mb s3://test-photos || true
+
+          # List buckets
+          echo "Buckets created:"
+          aws --endpoint-url=http://localhost:4566 s3 ls
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
 
       - name: Upload test images to S3
         run: |
-          # Create a minimal test image
-          echo -n "Test image data" > test-image.txt
+          # Create a minimal test image file
+          echo "Test image data" > test-image.jpg
 
-          docker compose -f docker-compose.ci.yml exec -T localstack sh -c '
-            echo "Uploading test file..."
-            echo "Test image" | aws --endpoint-url=http://localhost:4566 s3 cp - s3://test-photos/photos/2024/test-image.jpg
-            echo "Files in bucket:"
-            aws --endpoint-url=http://localhost:4566 s3 ls s3://test-photos/ --recursive
-          '
+          # Upload using AWS CLI from host
+          aws --endpoint-url=http://localhost:4566 s3 cp test-image.jpg s3://test-photos/photos/2024/test-image.jpg
+
+          # List files
+          echo "Files in bucket:"
+          aws --endpoint-url=http://localhost:4566 s3 ls s3://test-photos/ --recursive
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
 
       - name: Wait for application to be healthy
         run: |
           echo "Waiting for application to be ready..."
+          sleep 15
+
+          # Show logs first
+          echo "=== Application startup logs ==="
+          docker compose -f docker-compose.ci.yml logs photo-app | tail -30
+
+          # Check if container is running
+          docker compose -f docker-compose.ci.yml ps
+
+          # Wait for health endpoint
           timeout 120 bash -c 'until curl -f http://localhost:3000/api/health 2>/dev/null; do
-            echo "Waiting for application..."
+            echo "Waiting for application... ($(date))"
             sleep 5
-          done'
+          done' || {
+            echo "Application failed to become healthy. Showing logs:"
+            docker compose -f docker-compose.ci.yml logs photo-app
+            exit 1
+          }
           echo "Application is healthy!"
 
       - name: Test health endpoint
@@ -177,8 +206,20 @@ jobs:
           echo "Health response: $response"
 
           # Check if response contains expected fields
-          echo "$response" | jq -e '.status' > /dev/null || (echo "Missing status field" && exit 1)
-          echo "$response" | jq -e '.s3Connected' > /dev/null || (echo "Missing s3Connected field" && exit 1)
+          if echo "$response" | jq -e '.status' > /dev/null; then
+            echo "✓ Status field present"
+          else
+            echo "✗ Missing status field"
+            exit 1
+          fi
+
+          if echo "$response" | jq -e '.s3Connected' > /dev/null; then
+            echo "✓ s3Connected field present"
+          else
+            echo "✗ Missing s3Connected field"
+            exit 1
+          fi
+
           echo "✓ Health check passed"
 
       - name: Test photos API endpoint
@@ -188,8 +229,20 @@ jobs:
           echo "Photos response: $response"
 
           # Check if response contains expected fields
-          echo "$response" | jq -e '.photos' > /dev/null || (echo "Missing photos field" && exit 1)
-          echo "$response" | jq -e '.total' > /dev/null || (echo "Missing total field" && exit 1)
+          if echo "$response" | jq -e '.photos' > /dev/null; then
+            echo "✓ Photos field present"
+          else
+            echo "✗ Missing photos field"
+            exit 1
+          fi
+
+          if echo "$response" | jq -e '.total' > /dev/null; then
+            echo "✓ Total field present"
+          else
+            echo "✗ Missing total field"
+            exit 1
+          fi
+
           echo "✓ Photos API passed"
 
       - name: Test cache stats endpoint
@@ -212,9 +265,13 @@ jobs:
           response=$(curl -s -X POST http://localhost:3000/api/photos/refresh)
           echo "Refresh response: $response"
 
-          # Check if response contains success field
-          echo "$response" | jq -e '.success' > /dev/null || echo "Note: Refresh may have partial results"
-          echo "✓ Refresh endpoint accessible"
+          # Check if response contains success or indexed field
+          if echo "$response" | jq -e '.success' > /dev/null || echo "$response" | jq -e '.indexed' > /dev/null; then
+            echo "✓ Refresh endpoint working"
+          else
+            echo "⚠ Refresh response may be incomplete, but endpoint is accessible"
+          fi
+          echo "✓ Refresh endpoint test passed"
 
       - name: View application logs
         if: always()
