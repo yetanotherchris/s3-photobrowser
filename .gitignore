@@ -69,6 +69,7 @@ web_modules/
 .env
 .env.*
 !.env.example
+!.env.test
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -140,9 +141,14 @@ vite.config.ts.timestamp-*
 
 # Application-specific
 cache/
+cache-test/
 *.db
 *.db-shm
 *.db-wal
+
+# Test artifacts
+test/localstack-data/
+test/fixtures/photos/
 
 # IDE
 .vscode/*

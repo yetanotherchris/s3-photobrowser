@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  localstack:
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"
+      - "4571:4571"
+    environment:
+      - SERVICES=s3
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - "./test/localstack-data:/tmp/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  photo-app-test:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - S3_ACCESS_KEY=test
+      - S3_SECRET_KEY=test
+      - S3_ENDPOINT=http://localstack:4566
+      - S3_BUCKET_NAME=test-photos
+      - S3_REGION=us-east-1
+      - CACHE_DIR=/app/cache
+      - CACHE_SIZE_LIMIT=10GB
+      - PRELOAD_COUNT=100
+      - NODE_ENV=test
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+    volumes:
+      - photo-cache-test:/app/cache
+    depends_on:
+      localstack:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  photo-cache-test:
+    driver: local
