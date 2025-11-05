@@ -148,7 +148,8 @@ export const PhotoGallery: React.FC = () => {
             hasMore={hasMore}
             loader={
               <div className="py-8 text-center">
-                <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent"></div>
+                <div className="mx-auto mb-2 h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent"></div>
+                <p className="text-sm text-gray-600">Loading more photos...</p>
               </div>
             }
             scrollableTarget="scrollableDiv"
