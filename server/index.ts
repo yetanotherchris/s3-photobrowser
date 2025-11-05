@@ -197,6 +197,27 @@ app.get('/api/photos/indexing-status', (_req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/photos/index-next
+ * Index next batch of unindexed photos
+ */
+app.post('/api/photos/index-next', async (req: Request, res: Response) => {
+  try {
+    const batchSize = parseInt(req.query.batchSize as string) || 100;
+    const result = await photoIndexer.indexNextBatch(batchSize);
+
+    res.json({
+      success: true,
+      indexed: result.indexed,
+      total: result.total,
+      failed: result.failed,
+    });
+  } catch (error) {
+    console.error('Error indexing next batch:', error);
+    res.status(500).json({ error: 'Failed to index next batch' });
+  }
+});
+
+/**
  * GET /api/photos/dates
  * Get all dates with photo counts
  */

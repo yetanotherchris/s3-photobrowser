@@ -15,6 +15,11 @@ export const config = {
     sizeLimit: process.env.CACHE_SIZE_LIMIT || '10GB',
     preloadCount: parseInt(process.env.PRELOAD_COUNT || '100', 10),
   },
+  indexing: {
+    // When false, only index up to preloadCount photos. Remaining photos are indexed on-demand.
+    // When true, continue indexing all photos in the background.
+    enableBackgroundIndexing: process.env.ENABLE_BACKGROUND_INDEXING === 'true',
+  },
   server: {
     port: parseInt(process.env.PORT || '3001', 10),
     nodeEnv: process.env.NODE_ENV || 'development',
