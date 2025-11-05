@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+import fs from 'fs';
 import { config } from '../config.js';
 
 export interface PhotoMetadata {
@@ -28,6 +29,11 @@ class DatabaseService {
   private db: Database.Database;
 
   constructor() {
+    // Ensure the cache directory exists before creating the database
+    if (!fs.existsSync(config.cache.dir)) {
+      fs.mkdirSync(config.cache.dir, { recursive: true });
+    }
+
     const dbPath = path.join(config.cache.dir, 'photos.db');
     this.db = new Database(dbPath);
     this.initializeSchema();
