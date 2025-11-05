@@ -174,10 +174,25 @@ app.post('/api/photos/refresh', async (_req: Request, res: Response) => {
       indexed: result.indexed,
       total: result.total,
       failed: result.failed,
+      backgroundIndexing: result.backgroundIndexing,
     });
   } catch (error) {
     console.error('Error refreshing photos:', error);
     res.status(500).json({ error: 'Failed to refresh photos' });
+  }
+});
+
+/**
+ * GET /api/photos/indexing-status
+ * Get background indexing status
+ */
+app.get('/api/photos/indexing-status', (_req: Request, res: Response) => {
+  try {
+    const status = photoIndexer.getBackgroundIndexingStatus();
+    res.json(status);
+  } catch (error) {
+    console.error('Error getting indexing status:', error);
+    res.status(500).json({ error: 'Failed to get indexing status' });
   }
 });
 

@@ -3,36 +3,53 @@ import { database, PhotoMetadata } from './database.js';
 import { randomUUID } from 'crypto';
 import exifr from 'exifr';
 import path from 'path';
+import { config } from '../config.js';
 
 export interface IndexResult {
   total: number;
   indexed: number;
   failed: number;
+  backgroundIndexing?: boolean;
 }
 
 class PhotoIndexerService {
+  private backgroundIndexing = false;
+  private backgroundIndexStats = { indexed: 0, failed: 0 };
+
   /**
    * Scan S3 bucket and index all photos and videos
+   * @param initialLimit - Number of photos to index immediately (default: config.cache.preloadCount)
+   *                       Set to 0 or Infinity to index all photos synchronously
    */
-  async indexAllPhotos(): Promise<IndexResult> {
+  async indexAllPhotos(initialLimit?: number): Promise<IndexResult> {
+    const limit = initialLimit ?? config.cache.preloadCount;
     console.log('Starting photo indexing...');
 
     const objects = await s3Client.listAllObjects();
+
+    // Filter media files
+    const mediaObjects = objects.filter(
+      (obj) => s3Client.isImage(obj.key) || s3Client.isVideo(obj.key)
+    );
+
     let indexed = 0;
     let failed = 0;
 
-    for (const object of objects) {
-      try {
-        // Skip non-media files
-        if (!s3Client.isImage(object.key) && !s3Client.isVideo(object.key)) {
-          continue;
-        }
+    // Determine how many to index initially
+    const shouldLimitInitial = limit > 0 && limit < Infinity;
+    const initialBatchSize = shouldLimitInitial ? Math.min(limit, mediaObjects.length) : mediaObjects.length;
+    const hasBackgroundWork = shouldLimitInitial && mediaObjects.length > limit;
 
+    // Index initial batch synchronously
+    console.log(`Indexing initial batch of ${initialBatchSize} photos...`);
+    for (let i = 0; i < initialBatchSize; i++) {
+      const object = mediaObjects[i];
+      try {
         await this.indexPhoto(object);
         indexed++;
 
-        if (indexed % 100 === 0) {
-          console.log(`Indexed ${indexed}/${objects.length} items...`);
+        if (indexed % 50 === 0) {
+          console.log(`Indexed ${indexed}/${initialBatchSize} items (initial batch)...`);
         }
       } catch (error) {
         console.error(`Failed to index ${object.key}:`, error);
@@ -41,13 +58,74 @@ class PhotoIndexerService {
     }
 
     console.log(
-      `Indexing complete: ${indexed} indexed, ${failed} failed out of ${objects.length} total`
+      `Initial indexing complete: ${indexed} indexed, ${failed} failed out of ${initialBatchSize}`
     );
 
+    // Start background indexing for remaining photos
+    if (hasBackgroundWork) {
+      const remainingObjects = mediaObjects.slice(initialBatchSize);
+      console.log(`Starting background indexing for ${remainingObjects.length} remaining photos...`);
+      this.startBackgroundIndexing(remainingObjects);
+    }
+
     return {
-      total: objects.length,
+      total: mediaObjects.length,
       indexed,
       failed,
+      backgroundIndexing: hasBackgroundWork,
+    };
+  }
+
+  /**
+   * Start background indexing for remaining photos
+   */
+  private startBackgroundIndexing(objects: Array<{ key: string; size: number; lastModified: Date }>): void {
+    if (this.backgroundIndexing) {
+      console.log('Background indexing already in progress, skipping...');
+      return;
+    }
+
+    this.backgroundIndexing = true;
+    this.backgroundIndexStats = { indexed: 0, failed: 0 };
+
+    // Run indexing in background (non-blocking)
+    (async () => {
+      try {
+        for (const object of objects) {
+          try {
+            await this.indexPhoto(object);
+            this.backgroundIndexStats.indexed++;
+
+            if (this.backgroundIndexStats.indexed % 100 === 0) {
+              console.log(`Background indexed ${this.backgroundIndexStats.indexed}/${objects.length} items...`);
+            }
+          } catch (error) {
+            console.error(`Background indexing failed for ${object.key}:`, error);
+            this.backgroundIndexStats.failed++;
+          }
+        }
+
+        console.log(
+          `Background indexing complete: ${this.backgroundIndexStats.indexed} indexed, ${this.backgroundIndexStats.failed} failed`
+        );
+      } finally {
+        this.backgroundIndexing = false;
+      }
+    })();
+  }
+
+  /**
+   * Get background indexing status
+   */
+  getBackgroundIndexingStatus(): {
+    isIndexing: boolean;
+    indexed: number;
+    failed: number;
+  } {
+    return {
+      isIndexing: this.backgroundIndexing,
+      indexed: this.backgroundIndexStats.indexed,
+      failed: this.backgroundIndexStats.failed,
     };
   }
 
