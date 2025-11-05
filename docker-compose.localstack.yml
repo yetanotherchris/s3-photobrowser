@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  localstack:
+    image: localstack/localstack:latest
+    container_name: s3-photobrowser-localstack
+    ports:
+      - "4566:4566"            # LocalStack Gateway
+      - "4510-4559:4510-4559"  # External services port range
+    environment:
+      - SERVICES=s3
+      - DEBUG=1
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - DATA_DIR=/tmp/localstack/data
+      - PERSISTENCE=0
+    volumes:
+      - "./test/localstack-init:/etc/localstack/init/ready.d"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./test/test-data:/test-data"
+    networks:
+      - s3-photobrowser-test
+
+  app-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: s3-photobrowser-app-test
+    ports:
+      - "3002:3001"
+    environment:
+      - NODE_ENV=test
+      - S3_ACCESS_KEY=test
+      - S3_SECRET_KEY=test
+      - S3_ENDPOINT=http://localstack:4566
+      - S3_BUCKET_NAME=test-photos
+      - S3_REGION=us-east-1
+      - CACHE_DIR=/app/cache
+      - CACHE_SIZE_LIMIT=1GB
+      - PRELOAD_COUNT=10
+      - PORT=3001
+      - ENABLE_VIDEO_SUPPORT=true
+    depends_on:
+      - localstack
+    networks:
+      - s3-photobrowser-test
+    volumes:
+      - app-cache:/app/cache
+
+networks:
+  s3-photobrowser-test:
+    driver: bridge
+
+volumes:
+  app-cache:

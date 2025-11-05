@@ -144,6 +144,16 @@ cache/
 *.db-shm
 *.db-wal
 
+# Test artifacts
+test-cache/
+test/test-data/*.jpg
+test/test-data/*.jpeg
+test/test-data/*.png
+test/test-data/*.gif
+test/test-data/*.mp4
+test/test-data/*.mov
+!test/test-data/README.md
+
 # IDE
 .vscode/*
 !.vscode/extensions.json

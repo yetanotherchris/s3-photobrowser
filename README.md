@@ -284,6 +284,46 @@ Ensure FFmpeg is installed:
 - Docker: FFmpeg is included automatically
 - Local: Install FFmpeg (`brew install ffmpeg` on macOS, `apt install ffmpeg` on Ubuntu)
 
+## Testing
+
+The application includes comprehensive unit and integration tests using Jest and LocalStack.
+
+### Running Tests
+
+**Prerequisites:**
+- Docker and Docker Compose (for integration tests)
+
+**Quick Start:**
+
+```bash
+# Automated setup (recommended)
+./scripts/test-setup.sh
+
+# Run all tests
+npm test
+
+# Run specific test suites
+npm run test:unit          # Unit tests only
+npm run test:integration   # Integration tests only
+npm run test:watch         # Watch mode
+npm run test:coverage      # With coverage report
+```
+
+**Manual Setup:**
+
+```bash
+# Start LocalStack for integration tests
+docker compose -f docker-compose.localstack.yml up -d localstack
+
+# Run tests
+npm test
+
+# Stop LocalStack
+docker compose -f docker-compose.localstack.yml down
+```
+
+For detailed testing documentation, see [test/README.md](test/README.md).
+
 ## Performance Tips
 
 1. **Increase preload count** for faster initial load on fast connections
