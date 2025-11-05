@@ -81,7 +81,7 @@ jobs:
                 - S3_REGION=us-east-1
                 - CACHE_DIR=/app/cache
                 - CACHE_SIZE_LIMIT=1GB
-                - PRELOAD_COUNT=5
+                - PRELOAD_COUNT=0
                 - PORT=3001
                 - NODE_ENV=production
                 - ENABLE_VIDEO_SUPPORT=true
@@ -94,10 +94,10 @@ jobs:
                 - app-cache:/app/cache
               healthcheck:
                 test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/api/health"]
-                interval: 10s
-                timeout: 5s
-                retries: 10
-                start_period: 30s
+                interval: 15s
+                timeout: 10s
+                retries: 15
+                start_period: 60s
 
           networks:
             s3-photobrowser-network:
@@ -130,8 +130,9 @@ jobs:
 
       - name: Start services
         run: |
-          docker compose -f docker-compose.ci.yml up -d
-          echo "Services started, waiting for LocalStack to be healthy..."
+          # Start LocalStack first
+          docker compose -f docker-compose.ci.yml up -d localstack
+          echo "LocalStack starting..."
 
       - name: Wait for LocalStack to be ready
         run: |
@@ -176,28 +177,52 @@ jobs:
           AWS_SECRET_ACCESS_KEY: test
           AWS_DEFAULT_REGION: us-east-1
 
+      - name: Start application
+        run: |
+          echo "Starting application now that S3 is ready..."
+          docker compose -f docker-compose.ci.yml up -d photo-app
+          sleep 5
+
       - name: Wait for application to be healthy
         run: |
           echo "Waiting for application to be ready..."
-          sleep 15
+          sleep 20
 
           # Show logs first
           echo "=== Application startup logs ==="
-          docker compose -f docker-compose.ci.yml logs photo-app | tail -30
+          docker compose -f docker-compose.ci.yml logs photo-app | tail -50
 
           # Check if container is running
+          echo "=== Container status ==="
           docker compose -f docker-compose.ci.yml ps
 
-          # Wait for health endpoint
-          timeout 120 bash -c 'until curl -f http://localhost:3000/api/health 2>/dev/null; do
-            echo "Waiting for application... ($(date))"
-            sleep 5
-          done' || {
-            echo "Application failed to become healthy. Showing logs:"
+          # Check if container exited
+          if ! docker compose -f docker-compose.ci.yml ps photo-app | grep -q "Up"; then
+            echo "❌ Application container is not running!"
+            echo "=== Full application logs ==="
             docker compose -f docker-compose.ci.yml logs photo-app
             exit 1
-          }
-          echo "Application is healthy!"
+          fi
+
+          # Wait for health endpoint with retries
+          echo "Testing health endpoint..."
+          max_attempts=24
+          attempt=0
+          while [ $attempt -lt $max_attempts ]; do
+            if curl -f http://localhost:3000/api/health 2>/dev/null; then
+              echo "✅ Application is healthy!"
+              exit 0
+            fi
+            attempt=$((attempt + 1))
+            echo "Attempt $attempt/$max_attempts - Waiting for application..."
+            sleep 5
+          done
+
+          # If we get here, health check failed
+          echo "❌ Application failed to become healthy after $max_attempts attempts"
+          echo "=== Full application logs ==="
+          docker compose -f docker-compose.ci.yml logs photo-app
+          exit 1
 
       - name: Test health endpoint
         run: |
