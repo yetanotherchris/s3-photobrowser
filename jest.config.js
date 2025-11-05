@@ -14,8 +14,17 @@ export default {
     ],
   },
   testMatch: [
-    '**/test/**/*.test.ts',
-    '**/test/**/*.spec.ts',
+    '**/test/unit/**/*.test.ts',
+    '**/test/integration/**/*.test.ts',
+    '**/test/unit/**/*.spec.ts',
+    '**/test/integration/**/*.spec.ts',
+  ],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/dist/',
+    '/test/api.test.ts',
+    '/test/server.test.ts',
+    '/test/integration.test.ts',
   ],
   collectCoverageFrom: [
     'server/**/*.ts',
