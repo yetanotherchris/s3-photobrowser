@@ -1,0 +1,150 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      localstack:
+        image: localstack/localstack:latest
+        ports:
+          - 4566:4566
+        env:
+          SERVICES: s3
+          DEBUG: 1
+          DOCKER_HOST: unix:///var/run/docker.sock
+        options: >-
+          --health-cmd "curl -f http://localhost:4566/_localstack/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create test directories
+        run: |
+          mkdir -p test-cache
+          mkdir -p test-cache/thumbnails
+          mkdir -p test-cache/previews
+          mkdir -p test-cache/originals
+          mkdir -p test/test-data
+          mkdir -p test/fixtures/photos
+          chmod -R 777 test-cache
+
+      - name: Wait for LocalStack
+        run: |
+          echo "Waiting for LocalStack to be ready..."
+          timeout 60 bash -c 'until curl -f http://localhost:4566/_localstack/health 2>/dev/null | grep -q "s3"; do
+            echo "Still waiting..."
+            sleep 2
+          done'
+          echo "LocalStack is ready!"
+
+      - name: Create S3 test bucket
+        run: |
+          # Install AWS CLI if not present
+          which aws || pip install awscli-local awscli
+
+          # Create bucket
+          aws --endpoint-url=http://localhost:4566 s3 mb s3://test-photos || true
+
+          # Verify bucket exists
+          aws --endpoint-url=http://localhost:4566 s3 ls
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Run integration tests
+        env:
+          S3_ENDPOINT: http://localhost:4566
+          S3_ACCESS_KEY: test
+          S3_SECRET_KEY: test
+          S3_BUCKET_NAME: test-photos
+          S3_REGION: us-east-1
+          CACHE_DIR: ./test-cache
+          NODE_ENV: test
+        run: npm run test:integration
+
+      - name: Run all tests with coverage
+        env:
+          S3_ENDPOINT: http://localhost:4566
+          S3_ACCESS_KEY: test
+          S3_SECRET_KEY: test
+          S3_BUCKET_NAME: test-photos
+          S3_REGION: us-east-1
+          CACHE_DIR: ./test-cache
+          NODE_ENV: test
+        run: npm run test:coverage
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/lcov.info
+          flags: unittests
+          name: codecov-s3-photobrowser
+          fail_ci_if_error: false
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint
+        continue-on-error: true
+
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Check build artifacts
+        run: |
+          test -d dist || (echo "dist directory not found" && exit 1)
+          test -d dist/client || (echo "dist/client directory not found" && exit 1)

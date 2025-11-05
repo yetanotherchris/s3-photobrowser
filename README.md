@@ -1,5 +1,8 @@
 # S3 Photo Browser
 
+![Docker Compose Tests](https://github.com/yetanotherchris/s3-photobrowser/workflows/Docker%20Compose%20Integration%20Test/badge.svg)
+![Tests](https://github.com/yetanotherchris/s3-photobrowser/workflows/Tests/badge.svg)
+
 A Google Photos-style web application for browsing, viewing, and managing photos and videos stored in S3-compatible storage.
 
 ## Features
@@ -283,6 +286,46 @@ If thumbnails aren't loading:
 Ensure FFmpeg is installed:
 - Docker: FFmpeg is included automatically
 - Local: Install FFmpeg (`brew install ffmpeg` on macOS, `apt install ffmpeg` on Ubuntu)
+
+## Testing
+
+The application includes comprehensive unit and integration tests using Jest and LocalStack.
+
+### Running Tests
+
+**Prerequisites:**
+- Docker and Docker Compose (for integration tests)
+
+**Quick Start:**
+
+```bash
+# Automated setup (recommended)
+./scripts/test-setup.sh
+
+# Run all tests
+npm test
+
+# Run specific test suites
+npm run test:unit          # Unit tests only
+npm run test:integration   # Integration tests only
+npm run test:watch         # Watch mode
+npm run test:coverage      # With coverage report
+```
+
+**Manual Setup:**
+
+```bash
+# Start LocalStack for integration tests
+docker compose -f docker-compose.localstack.yml up -d localstack
+
+# Run tests
+npm test
+
+# Stop LocalStack
+docker compose -f docker-compose.localstack.yml down
+```
+
+For detailed testing documentation, see [test/README.md](test/README.md).
 
 ## Performance Tips
 

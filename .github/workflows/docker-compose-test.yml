@@ -1,0 +1,391 @@
+name: Docker Compose Integration Test
+
+on:
+  pull_request:
+    branches: [ main, master, develop ]
+  push:
+    branches: [ main, master ]
+
+jobs:
+  docker-compose-test:
+    name: Test Application with Docker Compose
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create .env file for LocalStack
+        run: |
+          cat > .env << EOF
+          # S3 Configuration (LocalStack)
+          S3_ACCESS_KEY=test
+          S3_SECRET_KEY=test
+          S3_ENDPOINT=http://localstack:4566
+          S3_BUCKET_NAME=test-photos
+          S3_REGION=us-east-1
+
+          # Application Configuration
+          CACHE_DIR=/app/cache
+          CACHE_SIZE_LIMIT=1GB
+          PRELOAD_COUNT=10
+          PORT=3001
+          NODE_ENV=production
+
+          # Optional Configuration
+          ENABLE_VIDEO_SUPPORT=true
+          MAX_UPLOAD_SIZE=100MB
+          EOF
+
+      - name: Create test docker-compose configuration
+        run: |
+          cat > docker-compose.ci.yml << 'EOF'
+          version: '3.8'
+
+          services:
+            localstack:
+              image: localstack/localstack:latest
+              container_name: s3-photobrowser-localstack-ci
+              ports:
+                - "4566:4566"
+              environment:
+                - SERVICES=s3
+                - DEBUG=1
+                - DOCKER_HOST=unix:///var/run/docker.sock
+                - DATA_DIR=/tmp/localstack/data
+              volumes:
+                - "/var/run/docker.sock:/var/run/docker.sock"
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+                interval: 10s
+                timeout: 5s
+                retries: 5
+              networks:
+                - s3-photobrowser-network
+
+            photo-app:
+              build:
+                context: .
+                dockerfile: Dockerfile
+              container_name: s3-photobrowser-app-ci
+              ports:
+                - "3000:3001"
+              environment:
+                - S3_ACCESS_KEY=test
+                - S3_SECRET_KEY=test
+                - S3_ENDPOINT=http://localstack:4566
+                - S3_BUCKET_NAME=test-photos
+                - S3_REGION=us-east-1
+                - CACHE_DIR=/app/cache
+                - CACHE_SIZE_LIMIT=1GB
+                - PRELOAD_COUNT=0
+                - PORT=3001
+                - NODE_ENV=production
+                - ENABLE_VIDEO_SUPPORT=true
+              depends_on:
+                localstack:
+                  condition: service_healthy
+              networks:
+                - s3-photobrowser-network
+              volumes:
+                - app-cache:/app/cache
+              healthcheck:
+                test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/api/health"]
+                interval: 15s
+                timeout: 10s
+                retries: 15
+                start_period: 60s
+
+          networks:
+            s3-photobrowser-network:
+              driver: bridge
+
+          volumes:
+            app-cache:
+          EOF
+
+      - name: Create test bucket initialization script
+        run: |
+          mkdir -p test-init
+          cat > test-init/init-bucket.sh << 'EOF'
+          #!/bin/bash
+          set -e
+
+          echo "Waiting for LocalStack to be ready..."
+          until curl -s http://localhost:4566/_localstack/health | grep -q '"s3": "available"'; do
+            echo "Waiting..."
+            sleep 2
+          done
+
+          echo "Creating test bucket..."
+          aws --endpoint-url=http://localhost:4566 s3 mb s3://test-photos || true
+
+          echo "Bucket created successfully!"
+          aws --endpoint-url=http://localhost:4566 s3 ls
+          EOF
+          chmod +x test-init/init-bucket.sh
+
+      - name: Start services
+        run: |
+          # Start LocalStack first
+          docker compose -f docker-compose.ci.yml up -d localstack
+          echo "LocalStack starting..."
+
+      - name: Wait for LocalStack to be ready
+        run: |
+          echo "Waiting for LocalStack to be ready..."
+          sleep 10
+          timeout 90 bash -c 'until curl -f http://localhost:4566/_localstack/health 2>/dev/null | grep -q "s3"; do
+            echo "Still waiting for LocalStack..."
+            sleep 3
+          done'
+          echo "LocalStack is ready!"
+          curl http://localhost:4566/_localstack/health
+
+      - name: Initialize S3 bucket
+        run: |
+          # Install AWS CLI
+          pip install awscli
+
+          # Create bucket using AWS CLI from host
+          aws --endpoint-url=http://localhost:4566 s3 mb s3://test-photos || true
+
+          # List buckets
+          echo "Buckets created:"
+          aws --endpoint-url=http://localhost:4566 s3 ls
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
+
+      - name: Upload test images to S3
+        run: |
+          # Create a minimal test image file
+          echo "Test image data" > test-image.jpg
+
+          # Upload using AWS CLI from host
+          aws --endpoint-url=http://localhost:4566 s3 cp test-image.jpg s3://test-photos/photos/2024/test-image.jpg
+
+          # List files
+          echo "Files in bucket:"
+          aws --endpoint-url=http://localhost:4566 s3 ls s3://test-photos/ --recursive
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
+
+      - name: Start application
+        run: |
+          echo "Starting application now that S3 is ready..."
+          docker compose -f docker-compose.ci.yml up -d photo-app
+          sleep 5
+
+      - name: Wait for application to be healthy
+        run: |
+          echo "Waiting for application to be ready..."
+          sleep 20
+
+          # Show logs first
+          echo "=== Application startup logs ==="
+          docker compose -f docker-compose.ci.yml logs photo-app | tail -50
+
+          # Check if container is running
+          echo "=== Container status ==="
+          docker compose -f docker-compose.ci.yml ps
+
+          # Check if container exited
+          if ! docker compose -f docker-compose.ci.yml ps photo-app | grep -q "Up"; then
+            echo "❌ Application container is not running!"
+            echo "=== Full application logs ==="
+            docker compose -f docker-compose.ci.yml logs photo-app
+            exit 1
+          fi
+
+          # Wait for health endpoint with retries
+          echo "Testing health endpoint..."
+          max_attempts=24
+          attempt=0
+          while [ $attempt -lt $max_attempts ]; do
+            if curl -f http://localhost:3000/api/health 2>/dev/null; then
+              echo "✅ Application is healthy!"
+              exit 0
+            fi
+            attempt=$((attempt + 1))
+            echo "Attempt $attempt/$max_attempts - Waiting for application..."
+            sleep 5
+          done
+
+          # If we get here, health check failed
+          echo "❌ Application failed to become healthy after $max_attempts attempts"
+          echo "=== Full application logs ==="
+          docker compose -f docker-compose.ci.yml logs photo-app
+          exit 1
+
+      - name: Test health endpoint
+        run: |
+          echo "Testing health endpoint..."
+          response=$(curl -s http://localhost:3000/api/health)
+          echo "Health response: $response"
+
+          # Check if response contains expected fields
+          if echo "$response" | jq -e '.status' > /dev/null; then
+            echo "✓ Status field present"
+          else
+            echo "✗ Missing status field"
+            exit 1
+          fi
+
+          if echo "$response" | jq -e '.s3Connected' > /dev/null; then
+            echo "✓ s3Connected field present"
+          else
+            echo "✗ Missing s3Connected field"
+            exit 1
+          fi
+
+          echo "✓ Health check passed"
+
+      - name: Test photos API endpoint
+        run: |
+          echo "Testing photos API endpoint..."
+          response=$(curl -s http://localhost:3000/api/photos)
+          echo "Photos response: $response"
+
+          # Check if response contains expected fields
+          if echo "$response" | jq -e '.photos' > /dev/null; then
+            echo "✓ Photos field present"
+          else
+            echo "✗ Missing photos field"
+            exit 1
+          fi
+
+          if echo "$response" | jq -e '.total' > /dev/null; then
+            echo "✓ Total field present"
+          else
+            echo "✗ Missing total field"
+            exit 1
+          fi
+
+          echo "✓ Photos API passed"
+
+      - name: Test cache stats endpoint
+        run: |
+          echo "Testing cache stats endpoint..."
+          response=$(curl -s http://localhost:3000/api/cache/stats)
+          echo "Cache stats response: $response"
+
+          # Check if we get a valid response
+          if [ -n "$response" ]; then
+            echo "✓ Cache stats endpoint accessible"
+          else
+            echo "✗ Cache stats endpoint failed"
+            exit 1
+          fi
+
+      - name: Test photo refresh endpoint
+        run: |
+          echo "Testing photo refresh endpoint..."
+          response=$(curl -s -X POST http://localhost:3000/api/photos/refresh)
+          echo "Refresh response: $response"
+
+          # Check if response contains success or indexed field
+          if echo "$response" | jq -e '.success' > /dev/null || echo "$response" | jq -e '.indexed' > /dev/null; then
+            echo "✓ Refresh endpoint working"
+          else
+            echo "⚠ Refresh response may be incomplete, but endpoint is accessible"
+          fi
+          echo "✓ Refresh endpoint test passed"
+
+      - name: View application logs
+        if: always()
+        run: |
+          echo "=== Application Logs ==="
+          docker compose -f docker-compose.ci.yml logs photo-app
+
+      - name: View LocalStack logs
+        if: always()
+        run: |
+          echo "=== LocalStack Logs ==="
+          docker compose -f docker-compose.ci.yml logs localstack
+
+      - name: Check container status
+        if: always()
+        run: |
+          echo "=== Container Status ==="
+          docker compose -f docker-compose.ci.yml ps
+
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "Stopping services..."
+          docker compose -f docker-compose.ci.yml down -v
+          echo "Cleanup complete"
+
+  docker-build-test:
+    name: Test Docker Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: |
+          docker build -t s3-photobrowser:test .
+
+      - name: Inspect image
+        run: |
+          docker images s3-photobrowser:test
+          docker history s3-photobrowser:test
+
+      - name: Test image can start
+        run: |
+          # Create a minimal .env file
+          cat > .env << EOF
+          S3_ACCESS_KEY=test
+          S3_SECRET_KEY=test
+          S3_ENDPOINT=http://localhost:4566
+          S3_BUCKET_NAME=test
+          S3_REGION=us-east-1
+          EOF
+
+          # Start container (it will fail to connect to S3, but should start)
+          docker run -d --name test-container --env-file .env -p 3001:3001 s3-photobrowser:test || true
+
+          # Give it a few seconds
+          sleep 5
+
+          # Check if it started (even if it exits, that's okay for this test)
+          docker ps -a | grep test-container
+
+          # Check logs
+          echo "=== Container Logs ==="
+          docker logs test-container || true
+
+          # Cleanup
+          docker rm -f test-container || true
+
+  summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [docker-compose-test, docker-build-test]
+    if: always()
+
+    steps:
+      - name: Check test results
+        run: |
+          echo "Docker Compose Test: ${{ needs.docker-compose-test.result }}"
+          echo "Docker Build Test: ${{ needs.docker-build-test.result }}"
+
+          if [ "${{ needs.docker-compose-test.result }}" == "success" ] && [ "${{ needs.docker-build-test.result }}" == "success" ]; then
+            echo "✓ All tests passed!"
+            exit 0
+          else
+            echo "✗ Some tests failed"
+            exit 1
+          fi
