@@ -6,6 +6,7 @@ import { groupPhotosByDate } from '../utils';
 import { DateGroup } from './DateGroup';
 import { DateNavigator } from './DateNavigator';
 import { PhotoViewer } from './PhotoViewer';
+import { Timeline } from './Timeline';
 
 export const PhotoGallery: React.FC = () => {
   const [photos, setPhotos] = useState<PhotoMetadata[]>([]);
@@ -141,7 +142,7 @@ export const PhotoGallery: React.FC = () => {
           </p>
         </div>
 
-        <div id="scrollableDiv" className="h-[calc(100vh-80px)] overflow-y-auto p-6">
+        <div id="scrollableDiv" className="h-[calc(100vh-80px)] overflow-y-auto p-6 pr-20">
           <InfiniteScroll
             dataLength={photos.length}
             next={loadMore}
@@ -174,6 +175,8 @@ export const PhotoGallery: React.FC = () => {
           </InfiniteScroll>
         </div>
       </div>
+
+      <Timeline dates={dates} onYearClick={(year) => console.log('Year clicked:', year)} />
 
       {selectedPhotoIndex !== null && (
         <PhotoViewer
