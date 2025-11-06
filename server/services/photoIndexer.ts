@@ -1,7 +1,6 @@
 import { s3Client } from './s3Client.js';
 import { database, PhotoMetadata } from './database.js';
 import { randomUUID } from 'crypto';
-import exifr from 'exifr';
 import path from 'path';
 import { config } from '../config.js';
 
@@ -260,84 +259,18 @@ class PhotoIndexerService {
     }
 
     let createdAt = object.lastModified;
-    let width: number | undefined;
-    let height: number | undefined;
-    let exifData: any;
-    let hasExifDate = false;
 
-    // PRIORITY 1: Try to extract date from folder structure (fastest, respects user organization)
+    // PRIORITY 1: Extract date from folder structure (fastest, no downloads needed)
+    // This respects user's intentional organization (e.g., photos/2022/ = 2022 photos)
     const folderDate = this.extractDateFromPath(object.key);
     if (folderDate) {
       createdAt = folderDate;
       console.log(`Using folder date for ${object.key}: ${folderDate.toISOString().split('T')[0]}`);
     }
 
-    // PRIORITY 2-3: Try to extract EXIF data for images (only if already exists with EXIF)
-    // During initial indexing, we skip EXIF to be fast. EXIF will be extracted on-demand when photo is viewed.
-    if (!isVideo && existing?.exifData) {
-      try {
-        const buffer = await s3Client.getObjectBuffer(object.key);
-        const exif = await exifr.parse(buffer, {
-          pick: [
-            'DateTimeOriginal',
-            'CreateDate',
-            'Make',
-            'Model',
-            'LensModel',
-            'FocalLength',
-            'FNumber',
-            'ISO',
-            'ExposureTime',
-            'latitude',
-            'longitude',
-          ],
-        });
-
-        if (exif) {
-          // Use EXIF date if available (overrides folder date for precision)
-          if (exif.DateTimeOriginal) {
-            createdAt = new Date(exif.DateTimeOriginal);
-            hasExifDate = true;
-          } else if (exif.CreateDate) {
-            createdAt = new Date(exif.CreateDate);
-            hasExifDate = true;
-          }
-
-          if (hasExifDate) {
-            console.log(
-              `Refined date with EXIF for ${object.key}: ${createdAt.toISOString().split('T')[0]}`
-            );
-          }
-
-          // Extract camera info
-          exifData = {
-            camera: exif.Make && exif.Model ? `${exif.Make} ${exif.Model}` : undefined,
-            lens: exif.LensModel,
-            focalLength: exif.FocalLength,
-            aperture: exif.FNumber,
-            iso: exif.ISO,
-            shutterSpeed: exif.ExposureTime ? `1/${Math.round(1 / exif.ExposureTime)}` : undefined,
-            location:
-              exif.latitude && exif.longitude
-                ? {
-                    latitude: exif.latitude,
-                    longitude: exif.longitude,
-                  }
-                : undefined,
-          };
-
-          // Try to get dimensions from EXIF
-          const size = await exifr.parse(buffer, { pick: ['ImageWidth', 'ImageHeight'] });
-          if (size) {
-            width = size.ImageWidth;
-            height = size.ImageHeight;
-          }
-        }
-      } catch (error) {
-        // EXIF parsing failed, use folder date or file modified date
-        console.warn(`Failed to parse EXIF for ${object.key}:`, error);
-      }
-    }
+    // PRIORITY 2-3: EXIF extraction is skipped during initial indexing to avoid downloads
+    // EXIF data (including precise dates) will be extracted later when photos are viewed/downloaded
+    // See imageProcessor.extractAndUpdateExif() for progressive EXIF refinement
 
     const photo: PhotoMetadata = {
       id: existing?.id || randomUUID(),
@@ -347,12 +280,12 @@ class PhotoIndexerService {
       size: object.size,
       mimeType: s3Client.getMimeType(object.key),
       type: isVideo ? 'video' : 'photo',
-      width,
-      height,
+      width: existing?.width, // Preserve existing dimensions if available
+      height: existing?.height,
       duration: undefined, // Will be filled by video processor
       createdAt: createdAt.toISOString(),
       modifiedAt: object.lastModified.toISOString(),
-      exifData: exifData ? JSON.stringify(exifData) : undefined,
+      exifData: existing?.exifData, // Preserve existing EXIF if available
       cached: existing?.cached || false,
     };
 
