@@ -19,6 +19,13 @@ export const config = {
     // When false, only index up to preloadCount photos. Remaining photos are indexed on-demand.
     // When true, continue indexing all photos in the background.
     enableBackgroundIndexing: process.env.ENABLE_BACKGROUND_INDEXING === 'true',
+
+    // Date accuracy mode determines how photo dates are determined:
+    // - "none": Use S3 LastModified date only (fastest)
+    // - "folders": Extract dates from folder structure (fast, no downloads)
+    // - "folders-exif": Use folders initially, then progressively refine with EXIF when photos are viewed
+    // - "exif": Download EXIF data upfront during indexing (slow but most accurate)
+    dateAccuracy: (process.env.DATE_ACCURACY || 'folders-exif') as 'none' | 'folders' | 'folders-exif' | 'exif',
   },
   server: {
     port: parseInt(process.env.PORT || '3001', 10),
