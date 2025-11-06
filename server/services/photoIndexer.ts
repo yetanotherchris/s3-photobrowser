@@ -14,7 +14,9 @@ export interface IndexResult {
 
 class PhotoIndexerService {
   private backgroundIndexing = false;
-  private backgroundIndexStats = { indexed: 0, failed: 0 };
+  private backgroundIndexStats = { indexed: 0, failed: 0, total: 0 };
+  private initialIndexing = false;
+  private initialIndexStats = { indexed: 0, failed: 0, total: 0 };
 
   /**
    * Scan S3 bucket and index all photos and videos
@@ -44,6 +46,10 @@ class PhotoIndexerService {
     const initialBatchSize = shouldLimitInitial ? Math.min(limit, mediaObjects.length) : mediaObjects.length;
     const hasBackgroundWork = shouldLimitInitial && mediaObjects.length > limit;
 
+    // Set initial indexing stats
+    this.initialIndexing = true;
+    this.initialIndexStats = { indexed: 0, failed: 0, total: initialBatchSize };
+
     // Index initial batch synchronously
     console.log(`Indexing initial batch of ${initialBatchSize} photos...`);
     for (let i = 0; i < initialBatchSize; i++) {
@@ -51,6 +57,7 @@ class PhotoIndexerService {
       try {
         await this.indexPhoto(object);
         indexed++;
+        this.initialIndexStats.indexed = indexed;
 
         if (indexed % 50 === 0) {
           console.log(`Indexed ${indexed}/${initialBatchSize} items (initial batch)...`);
@@ -58,8 +65,11 @@ class PhotoIndexerService {
       } catch (error) {
         console.error(`Failed to index ${object.key}:`, error);
         failed++;
+        this.initialIndexStats.failed = failed;
       }
     }
+
+    this.initialIndexing = false;
 
     console.log(
       `Initial indexing complete: ${indexed} indexed, ${failed} failed out of ${initialBatchSize}`
@@ -96,7 +106,7 @@ class PhotoIndexerService {
     }
 
     this.backgroundIndexing = true;
-    this.backgroundIndexStats = { indexed: 0, failed: 0 };
+    this.backgroundIndexStats = { indexed: 0, failed: 0, total: objects.length };
 
     // Run indexing in background (non-blocking)
     (async () => {
@@ -131,11 +141,43 @@ class PhotoIndexerService {
     isIndexing: boolean;
     indexed: number;
     failed: number;
+    total: number;
+    phase: 'initial' | 'background' | 'complete';
+    progress: number;
   } {
+    const isIndexing = this.initialIndexing || this.backgroundIndexing;
+
+    let phase: 'initial' | 'background' | 'complete';
+    let indexed: number;
+    let failed: number;
+    let total: number;
+
+    if (this.initialIndexing) {
+      phase = 'initial';
+      indexed = this.initialIndexStats.indexed;
+      failed = this.initialIndexStats.failed;
+      total = this.initialIndexStats.total;
+    } else if (this.backgroundIndexing) {
+      phase = 'background';
+      indexed = this.initialIndexStats.indexed + this.backgroundIndexStats.indexed;
+      failed = this.initialIndexStats.failed + this.backgroundIndexStats.failed;
+      total = this.initialIndexStats.total + this.backgroundIndexStats.total;
+    } else {
+      phase = 'complete';
+      indexed = this.initialIndexStats.indexed + this.backgroundIndexStats.indexed;
+      failed = this.initialIndexStats.failed + this.backgroundIndexStats.failed;
+      total = this.initialIndexStats.total + this.backgroundIndexStats.total;
+    }
+
+    const progress = total > 0 ? Math.round((indexed / total) * 100) : 100;
+
     return {
-      isIndexing: this.backgroundIndexing,
-      indexed: this.backgroundIndexStats.indexed,
-      failed: this.backgroundIndexStats.failed,
+      isIndexing,
+      indexed,
+      failed,
+      total,
+      phase,
+      progress,
     };
   }
 

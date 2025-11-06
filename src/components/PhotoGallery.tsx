@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import InfiniteScroll from 'react-infinite-scroll-component';
-import { PhotoMetadata, DateCount } from '../types';
+import { PhotoMetadata, DateCount, IndexingStatus } from '../types';
 import { api } from '../api';
 import { groupPhotosByDate } from '../utils';
 import { DateGroup } from './DateGroup';
 import { DateNavigator } from './DateNavigator';
 import { PhotoViewer } from './PhotoViewer';
 import { Timeline } from './Timeline';
+import { IndexingBanner } from './IndexingBanner';
 
 export const PhotoGallery: React.FC = () => {
   const [photos, setPhotos] = useState<PhotoMetadata[]>([]);
@@ -16,6 +17,7 @@ export const PhotoGallery: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [indexingStatus, setIndexingStatus] = useState<IndexingStatus | null>(null);
 
   // Group photos by date
   const photosByDate = useMemo(() => {
@@ -27,6 +29,36 @@ export const PhotoGallery: React.FC = () => {
     loadPhotos();
     loadDates();
   }, []);
+
+  // Poll indexing status
+  useEffect(() => {
+    const checkIndexingStatus = async () => {
+      try {
+        const status = await api.getIndexingStatus();
+        setIndexingStatus(status);
+
+        // If indexing is complete, reload photos and dates
+        if (!status.isIndexing && status.phase === 'complete' && indexingStatus?.isIndexing) {
+          loadPhotos();
+          loadDates();
+        }
+      } catch (err) {
+        console.error('Failed to get indexing status:', err);
+      }
+    };
+
+    // Check immediately
+    checkIndexingStatus();
+
+    // Poll every 2 seconds while indexing
+    const interval = setInterval(() => {
+      if (indexingStatus?.isIndexing || indexingStatus === null) {
+        checkIndexingStatus();
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [indexingStatus?.isIndexing]);
 
   const loadPhotos = async () => {
     try {
@@ -141,6 +173,8 @@ export const PhotoGallery: React.FC = () => {
             {photos.length} photos loaded
           </p>
         </div>
+
+        {indexingStatus && <IndexingBanner status={indexingStatus} />}
 
         <div id="scrollableDiv" className="h-[calc(100vh-80px)] overflow-y-auto p-6 pr-20">
           <InfiniteScroll

@@ -4,6 +4,7 @@ import {
   DateCount,
   CacheStats,
   HealthStatus,
+  IndexingStatus,
 } from './types';
 
 const API_BASE = '/api';
@@ -116,6 +117,17 @@ export const api = {
    */
   async getHealth(): Promise<HealthStatus> {
     const response = await fetch(`${API_BASE}/health`);
+    return response.json();
+  },
+
+  /**
+   * Get indexing status
+   */
+  async getIndexingStatus(): Promise<IndexingStatus> {
+    const response = await fetch(`${API_BASE}/photos/indexing-status`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch indexing status');
+    }
     return response.json();
   },
 };

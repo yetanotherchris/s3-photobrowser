@@ -54,3 +54,12 @@ export interface HealthStatus {
   s3Connected: boolean;
   cacheWritable: boolean;
 }
+
+export interface IndexingStatus {
+  isIndexing: boolean;
+  indexed: number;
+  failed: number;
+  total: number;
+  phase: 'initial' | 'background' | 'complete';
+  progress: number;
+}
