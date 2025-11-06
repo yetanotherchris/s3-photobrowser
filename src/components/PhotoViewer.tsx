@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Lightbox from 'yet-another-react-lightbox';
+import Video from 'yet-another-react-lightbox/plugins/video';
 import 'yet-another-react-lightbox/styles.css';
 import { PhotoMetadata } from '../types';
 import { formatFileSize, formatDuration, downloadFile, copyToClipboard } from '../utils';
@@ -89,6 +90,7 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
         close={onClose}
         slides={slides}
         index={currentIndex}
+        plugins={[Video]}
         on={{
           view: ({ index }) => setCurrentIndex(index),
         }}
