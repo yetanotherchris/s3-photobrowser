@@ -321,24 +321,34 @@ async function start() {
     }
     console.log('Cache directory ready');
 
-    // Index photos
-    console.log('Starting photo indexing...');
-    await photoIndexer.indexAllPhotos();
-
-    // Preload thumbnails
-    if (config.cache.preloadCount > 0) {
-      console.log(`Preloading ${config.cache.preloadCount} thumbnails...`);
-      await imageProcessor.preloadThumbnails(config.cache.preloadCount);
-
-      if (config.features.enableVideoSupport) {
-        await videoProcessor.preloadVideoThumbnails(Math.floor(config.cache.preloadCount / 10));
-      }
-    }
-
-    // Start server
+    // Start server immediately (non-blocking)
     app.listen(config.server.port, () => {
       console.log(`Server running on port ${config.server.port}`);
       console.log(`Environment: ${config.server.nodeEnv}`);
+    });
+
+    // Index photos in background (non-blocking)
+    console.log('Starting background photo indexing...');
+    photoIndexer.indexAllPhotos().then((result) => {
+      console.log(`Initial indexing complete: ${result.indexed} photos indexed`);
+
+      // Preload thumbnails after initial indexing
+      if (config.cache.preloadCount > 0) {
+        console.log(`Preloading ${config.cache.preloadCount} thumbnails...`);
+        imageProcessor.preloadThumbnails(config.cache.preloadCount).catch((err) => {
+          console.error('Failed to preload thumbnails:', err);
+        });
+
+        if (config.features.enableVideoSupport) {
+          videoProcessor
+            .preloadVideoThumbnails(Math.floor(config.cache.preloadCount / 10))
+            .catch((err) => {
+              console.error('Failed to preload video thumbnails:', err);
+            });
+        }
+      }
+    }).catch((error) => {
+      console.error('Background indexing failed:', error);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
