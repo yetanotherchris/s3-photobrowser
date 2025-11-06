@@ -129,6 +129,12 @@ export const PhotoGallery: React.FC = () => {
     setSelectedPhotoIndex(globalIndex);
   };
 
+  const handleYearClick = (year: number) => {
+    // The Timeline component handles the scrolling internally,
+    // but we can add additional logic here if needed in the future
+    console.log('Navigating to year:', year);
+  };
+
   if (loading && photos.length === 0) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -210,7 +216,7 @@ export const PhotoGallery: React.FC = () => {
         </div>
       </div>
 
-      <Timeline dates={dates} onYearClick={(year) => console.log('Year clicked:', year)} />
+      <Timeline dates={dates} onYearClick={handleYearClick} />
 
       {selectedPhotoIndex !== null && (
         <PhotoViewer

@@ -88,7 +88,7 @@ export const Timeline: React.FC<TimelineProps> = ({ dates, onYearClick }) => {
         scrollbarColor: '#9CA3AF transparent',
       }}
     >
-      <div ref={timelineRef} className="relative flex flex-col items-center space-y-1">
+      <div ref={timelineRef} className="relative flex flex-col items-center space-y-8">
         {years.map((year) => {
           const hasPhotos = yearsWithPhotos.has(year);
           const isActive = currentYear === year;
@@ -98,20 +98,20 @@ export const Timeline: React.FC<TimelineProps> = ({ dates, onYearClick }) => {
               key={year}
               onClick={() => handleYearClick(year)}
               disabled={!hasPhotos}
-              className={`group relative flex h-8 w-full items-center justify-center transition-all duration-150 ${
+              className={`group relative flex h-12 w-full items-center justify-center transition-all duration-150 ${
                 hasPhotos ? 'cursor-pointer' : 'cursor-default opacity-30'
               } ${
                 isActive
-                  ? 'scale-110 font-bold text-blue-600'
+                  ? 'scale-125 font-bold text-blue-600'
                   : hasPhotos
-                  ? 'text-gray-700 hover:scale-105 hover:text-blue-500'
+                  ? 'text-gray-700 hover:scale-110 hover:text-blue-500'
                   : 'text-gray-400'
               }`}
               title={hasPhotos ? `${year}` : `${year} (no photos)`}
             >
               <div className="flex items-center">
                 {/* Year label */}
-                <span className={`text-xs ${isActive ? 'font-bold' : 'font-medium'}`}>
+                <span className={`text-sm ${isActive ? 'font-bold' : 'font-medium'}`}>
                   {year}
                 </span>
 
