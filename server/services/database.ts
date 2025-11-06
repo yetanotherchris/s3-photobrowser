@@ -3,6 +3,19 @@ import path from 'path';
 import fs from 'fs';
 import { config } from '../config.js';
 
+export interface ExifData {
+  cameraMake?: string;
+  cameraModel?: string;
+  lensModel?: string;
+  focalLength?: number;
+  aperture?: number;
+  iso?: number;
+  shutterSpeed?: string;
+  exposureTime?: number;
+  latitude?: number;
+  longitude?: number;
+}
+
 export interface PhotoMetadata {
   id: string;
   filename: string;
@@ -16,7 +29,7 @@ export interface PhotoMetadata {
   duration?: number;
   createdAt: string;
   modifiedAt: string;
-  exifData?: string; // JSON string
+  exif?: ExifData;
   cached: boolean;
 }
 
@@ -54,7 +67,16 @@ class DatabaseService {
         duration REAL,
         createdAt TEXT NOT NULL,
         modifiedAt TEXT NOT NULL,
-        exifData TEXT,
+        cameraMake TEXT,
+        cameraModel TEXT,
+        lensModel TEXT,
+        focalLength REAL,
+        aperture REAL,
+        iso INTEGER,
+        shutterSpeed TEXT,
+        exposureTime REAL,
+        latitude REAL,
+        longitude REAL,
         cached INTEGER DEFAULT 0,
         UNIQUE(s3Key)
       );
@@ -63,7 +85,101 @@ class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_type ON photos(type);
       CREATE INDEX IF NOT EXISTS idx_cached ON photos(cached);
       CREATE INDEX IF NOT EXISTS idx_s3Key ON photos(s3Key);
+      CREATE INDEX IF NOT EXISTS idx_cameraMake ON photos(cameraMake);
+      CREATE INDEX IF NOT EXISTS idx_cameraModel ON photos(cameraModel);
+      CREATE INDEX IF NOT EXISTS idx_iso ON photos(iso);
     `);
+
+    // Migrate from old exifData JSON column if it exists
+    this.migrateExifData();
+  }
+
+  /**
+   * Migrate old exifData JSON column to new schema
+   */
+  private migrateExifData(): void {
+    try {
+      // Check if old exifData column exists
+      const columns = this.db.pragma('table_info(photos)') as Array<{ name: string }>;
+      const hasExifData = columns.some((col) => col.name === 'exifData');
+
+      if (!hasExifData) return;
+
+      console.log('Migrating EXIF data from JSON to columns...');
+
+      // Get all photos with exifData
+      const stmt = this.db.prepare('SELECT id, s3Key, exifData FROM photos WHERE exifData IS NOT NULL');
+      const rows = stmt.all() as Array<{ id: string; s3Key: string; exifData: string }>;
+
+      let migratedCount = 0;
+      for (const row of rows) {
+        try {
+          const exifData = JSON.parse(row.exifData);
+
+          // Parse camera from "Make Model" format
+          let cameraMake = exifData.camera?.split(' ')[0];
+          let cameraModel = exifData.camera?.substring(cameraMake?.length || 0).trim();
+
+          this.db.prepare(`
+            UPDATE photos SET
+              cameraMake = ?,
+              cameraModel = ?,
+              lensModel = ?,
+              focalLength = ?,
+              aperture = ?,
+              iso = ?,
+              shutterSpeed = ?,
+              latitude = ?,
+              longitude = ?
+            WHERE s3Key = ?
+          `).run(
+            cameraMake || null,
+            cameraModel || null,
+            exifData.lens || null,
+            exifData.focalLength || null,
+            exifData.aperture || null,
+            exifData.iso || null,
+            exifData.shutterSpeed || null,
+            exifData.location?.latitude || null,
+            exifData.location?.longitude || null,
+            row.s3Key
+          );
+
+          migratedCount++;
+        } catch (error) {
+          console.warn(`Failed to migrate EXIF for ${row.s3Key}:`, error);
+        }
+      }
+
+      if (migratedCount > 0) {
+        console.log(`Migrated ${migratedCount} photos from JSON to column-based EXIF`);
+      }
+
+      // Drop the old exifData column
+      this.db.exec(`
+        CREATE TABLE photos_new AS SELECT
+          id, filename, path, s3Key, size, mimeType, type,
+          width, height, duration, createdAt, modifiedAt,
+          cameraMake, cameraModel, lensModel, focalLength, aperture, iso,
+          shutterSpeed, exposureTime, latitude, longitude, cached
+        FROM photos;
+
+        DROP TABLE photos;
+        ALTER TABLE photos_new RENAME TO photos;
+
+        CREATE INDEX idx_createdAt ON photos(createdAt DESC);
+        CREATE INDEX idx_type ON photos(type);
+        CREATE INDEX idx_cached ON photos(cached);
+        CREATE INDEX idx_s3Key ON photos(s3Key);
+        CREATE INDEX idx_cameraMake ON photos(cameraMake);
+        CREATE INDEX idx_cameraModel ON photos(cameraModel);
+        CREATE INDEX idx_iso ON photos(iso);
+      `);
+
+      console.log('Migration complete, old exifData column dropped');
+    } catch (error) {
+      console.warn('EXIF migration failed:', error);
+    }
   }
 
   /**
@@ -73,10 +189,14 @@ class DatabaseService {
     const stmt = this.db.prepare(`
       INSERT INTO photos (
         id, filename, path, s3Key, size, mimeType, type,
-        width, height, duration, createdAt, modifiedAt, exifData, cached
+        width, height, duration, createdAt, modifiedAt,
+        cameraMake, cameraModel, lensModel, focalLength, aperture, iso,
+        shutterSpeed, exposureTime, latitude, longitude, cached
       ) VALUES (
         @id, @filename, @path, @s3Key, @size, @mimeType, @type,
-        @width, @height, @duration, @createdAt, @modifiedAt, @exifData, @cached
+        @width, @height, @duration, @createdAt, @modifiedAt,
+        @cameraMake, @cameraModel, @lensModel, @focalLength, @aperture, @iso,
+        @shutterSpeed, @exposureTime, @latitude, @longitude, @cached
       )
       ON CONFLICT(s3Key) DO UPDATE SET
         filename = @filename,
@@ -88,12 +208,42 @@ class DatabaseService {
         height = @height,
         duration = @duration,
         modifiedAt = @modifiedAt,
-        exifData = @exifData,
+        cameraMake = @cameraMake,
+        cameraModel = @cameraModel,
+        lensModel = @lensModel,
+        focalLength = @focalLength,
+        aperture = @aperture,
+        iso = @iso,
+        shutterSpeed = @shutterSpeed,
+        exposureTime = @exposureTime,
+        latitude = @latitude,
+        longitude = @longitude,
         cached = @cached
     `);
 
     stmt.run({
-      ...photo,
+      id: photo.id,
+      filename: photo.filename,
+      path: photo.path,
+      s3Key: photo.s3Key,
+      size: photo.size,
+      mimeType: photo.mimeType,
+      type: photo.type,
+      width: photo.width || null,
+      height: photo.height || null,
+      duration: photo.duration || null,
+      createdAt: photo.createdAt,
+      modifiedAt: photo.modifiedAt,
+      cameraMake: photo.exif?.cameraMake || null,
+      cameraModel: photo.exif?.cameraModel || null,
+      lensModel: photo.exif?.lensModel || null,
+      focalLength: photo.exif?.focalLength || null,
+      aperture: photo.exif?.aperture || null,
+      iso: photo.exif?.iso || null,
+      shutterSpeed: photo.exif?.shutterSpeed || null,
+      exposureTime: photo.exif?.exposureTime || null,
+      latitude: photo.exif?.latitude || null,
+      longitude: photo.exif?.longitude || null,
       cached: photo.cached ? 1 : 0,
     });
   }
@@ -227,7 +377,7 @@ class DatabaseService {
   updatePhotoExif(
     s3Key: string,
     data: {
-      exifData?: string;
+      exif?: ExifData;
       createdAt?: string;
       width?: number;
       height?: number;
@@ -236,9 +386,47 @@ class DatabaseService {
     const updates: string[] = [];
     const params: any = {};
 
-    if (data.exifData !== undefined) {
-      updates.push('exifData = @exifData');
-      params.exifData = data.exifData;
+    if (data.exif !== undefined) {
+      if (data.exif.cameraMake !== undefined) {
+        updates.push('cameraMake = @cameraMake');
+        params.cameraMake = data.exif.cameraMake;
+      }
+      if (data.exif.cameraModel !== undefined) {
+        updates.push('cameraModel = @cameraModel');
+        params.cameraModel = data.exif.cameraModel;
+      }
+      if (data.exif.lensModel !== undefined) {
+        updates.push('lensModel = @lensModel');
+        params.lensModel = data.exif.lensModel;
+      }
+      if (data.exif.focalLength !== undefined) {
+        updates.push('focalLength = @focalLength');
+        params.focalLength = data.exif.focalLength;
+      }
+      if (data.exif.aperture !== undefined) {
+        updates.push('aperture = @aperture');
+        params.aperture = data.exif.aperture;
+      }
+      if (data.exif.iso !== undefined) {
+        updates.push('iso = @iso');
+        params.iso = data.exif.iso;
+      }
+      if (data.exif.shutterSpeed !== undefined) {
+        updates.push('shutterSpeed = @shutterSpeed');
+        params.shutterSpeed = data.exif.shutterSpeed;
+      }
+      if (data.exif.exposureTime !== undefined) {
+        updates.push('exposureTime = @exposureTime');
+        params.exposureTime = data.exif.exposureTime;
+      }
+      if (data.exif.latitude !== undefined) {
+        updates.push('latitude = @latitude');
+        params.latitude = data.exif.latitude;
+      }
+      if (data.exif.longitude !== undefined) {
+        updates.push('longitude = @longitude');
+        params.longitude = data.exif.longitude;
+      }
     }
 
     if (data.createdAt !== undefined) {
@@ -308,10 +496,38 @@ class DatabaseService {
    * Convert database row to PhotoMetadata
    */
   private rowToPhoto(row: any): PhotoMetadata {
+    const exif: ExifData | undefined =
+      row.cameraMake || row.cameraModel || row.lensModel || row.focalLength ||
+      row.aperture || row.iso || row.shutterSpeed || row.latitude || row.longitude
+        ? {
+            cameraMake: row.cameraMake || undefined,
+            cameraModel: row.cameraModel || undefined,
+            lensModel: row.lensModel || undefined,
+            focalLength: row.focalLength || undefined,
+            aperture: row.aperture || undefined,
+            iso: row.iso || undefined,
+            shutterSpeed: row.shutterSpeed || undefined,
+            exposureTime: row.exposureTime || undefined,
+            latitude: row.latitude || undefined,
+            longitude: row.longitude || undefined,
+          }
+        : undefined;
+
     return {
-      ...row,
+      id: row.id,
+      filename: row.filename,
+      path: row.path,
+      s3Key: row.s3Key,
+      size: row.size,
+      mimeType: row.mimeType,
+      type: row.type,
+      width: row.width || undefined,
+      height: row.height || undefined,
+      duration: row.duration || undefined,
+      createdAt: row.createdAt,
+      modifiedAt: row.modifiedAt,
+      exif,
       cached: row.cached === 1,
-      exifData: row.exifData ? JSON.parse(row.exifData) : undefined,
     };
   }
 

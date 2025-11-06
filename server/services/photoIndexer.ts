@@ -1,5 +1,5 @@
 import { s3Client } from './s3Client.js';
-import { database, PhotoMetadata } from './database.js';
+import { database, PhotoMetadata, ExifData } from './database.js';
 import { randomUUID } from 'crypto';
 import exifr from 'exifr';
 import path from 'path';
@@ -262,7 +262,7 @@ class PhotoIndexerService {
     let createdAt = object.lastModified;
     let width: number | undefined = existing?.width;
     let height: number | undefined = existing?.height;
-    let exifData: string | undefined = existing?.exifData;
+    let exif: ExifData | undefined = existing?.exif;
 
     const dateAccuracy = config.indexing.dateAccuracy;
 
@@ -298,7 +298,7 @@ class PhotoIndexerService {
           try {
             // Use partial download to get just EXIF data (first 64KB)
             const buffer = await s3Client.getPartialObjectBuffer(object.key, 65536);
-            const exif = await exifr.parse(buffer, {
+            const parsedExif = await exifr.parse(buffer, {
               pick: [
                 'DateTimeOriginal',
                 'CreateDate',
@@ -316,40 +316,35 @@ class PhotoIndexerService {
               ],
             });
 
-            if (exif) {
+            if (parsedExif) {
               // Use EXIF date if available
-              if (exif.DateTimeOriginal) {
-                createdAt = new Date(exif.DateTimeOriginal);
+              if (parsedExif.DateTimeOriginal) {
+                createdAt = new Date(parsedExif.DateTimeOriginal);
                 console.log(`Using EXIF date for ${object.key}: ${createdAt.toISOString().split('T')[0]}`);
-              } else if (exif.CreateDate) {
-                createdAt = new Date(exif.CreateDate);
+              } else if (parsedExif.CreateDate) {
+                createdAt = new Date(parsedExif.CreateDate);
                 console.log(`Using EXIF date for ${object.key}: ${createdAt.toISOString().split('T')[0]}`);
               }
 
               // Extract dimensions
-              if (exif.ImageWidth && exif.ImageHeight) {
-                width = exif.ImageWidth;
-                height = exif.ImageHeight;
+              if (parsedExif.ImageWidth && parsedExif.ImageHeight) {
+                width = parsedExif.ImageWidth;
+                height = parsedExif.ImageHeight;
               }
 
               // Extract camera info
-              const exifMetadata = {
-                camera: exif.Make && exif.Model ? `${exif.Make} ${exif.Model}` : undefined,
-                lens: exif.LensModel,
-                focalLength: exif.FocalLength,
-                aperture: exif.FNumber,
-                iso: exif.ISO,
-                shutterSpeed: exif.ExposureTime ? `1/${Math.round(1 / exif.ExposureTime)}` : undefined,
-                location:
-                  exif.latitude && exif.longitude
-                    ? {
-                        latitude: exif.latitude,
-                        longitude: exif.longitude,
-                      }
-                    : undefined,
+              exif = {
+                cameraMake: parsedExif.Make,
+                cameraModel: parsedExif.Model,
+                lensModel: parsedExif.LensModel,
+                focalLength: parsedExif.FocalLength,
+                aperture: parsedExif.FNumber,
+                iso: parsedExif.ISO,
+                shutterSpeed: parsedExif.ExposureTime ? `1/${Math.round(1 / parsedExif.ExposureTime)}` : undefined,
+                exposureTime: parsedExif.ExposureTime,
+                latitude: parsedExif.latitude,
+                longitude: parsedExif.longitude,
               };
-
-              exifData = JSON.stringify(exifMetadata);
             }
           } catch (error) {
             console.warn(`Failed to extract EXIF for ${object.key}:`, error);
@@ -376,7 +371,7 @@ class PhotoIndexerService {
       duration: undefined, // Will be filled by video processor
       createdAt: createdAt.toISOString(),
       modifiedAt: object.lastModified.toISOString(),
-      exifData,
+      exif,
       cached: existing?.cached || false,
     };
 
