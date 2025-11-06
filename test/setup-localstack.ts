@@ -40,24 +40,38 @@ async function setupLocalStack() {
       }
     }
 
-    // Upload test photos
+    // Upload test photos with year/month folder structure
     const testPhotosDir = path.resolve(process.cwd(), 'test/fixtures/photos');
     const files = readdirSync(testPhotosDir);
 
     console.log(`Uploading ${files.length} test photos...`);
-    for (const file of files) {
+
+    // Organize photos by year (testing folder date extraction)
+    // First 3 photos -> 2023, next 3 -> 2024/01, rest -> 2024/12
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
       const filePath = path.join(testPhotosDir, file);
       const fileContent = readFileSync(filePath);
+
+      // Determine folder structure based on index
+      let s3Key: string;
+      if (i < 3) {
+        s3Key = `photos/2023/${file}`;
+      } else if (i < 6) {
+        s3Key = `photos/2024/01/${file}`;
+      } else {
+        s3Key = `photos/2024/12/${file}`;
+      }
 
       await s3Client.send(
         new PutObjectCommand({
           Bucket: bucketName,
-          Key: file,
+          Key: s3Key,
           Body: fileContent,
           ContentType: file.endsWith('.jpg') || file.endsWith('.jpeg') ? 'image/jpeg' : 'image/png',
         })
       );
-      console.log(`  ✓ Uploaded: ${file}`);
+      console.log(`  ✓ Uploaded: ${s3Key}`);
     }
 
     console.log('✅ LocalStack setup complete!');

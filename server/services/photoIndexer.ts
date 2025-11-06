@@ -213,6 +213,34 @@ class PhotoIndexerService {
   }
 
   /**
+   * Extract date from folder path (e.g., "photos/2024/01/image.jpg" -> 2024-01-01)
+   * Supports patterns like:
+   * - photos/2024/image.jpg -> 2024-01-01
+   * - photos/2024/01/image.jpg -> 2024-01-01
+   * - 2023-12-25/photo.jpg -> 2023-12-25
+   * - travel/2021/europe/pic.jpg -> 2021-01-01
+   */
+  private extractDateFromPath(s3Key: string): Date | null {
+    // Match year (1900-2099) in path
+    const yearMatch = s3Key.match(/\b(19|20)\d{2}\b/);
+    if (!yearMatch) return null;
+
+    const year = parseInt(yearMatch[0]);
+
+    // Try to find month (01-12) near the year
+    const monthMatch = s3Key.match(new RegExp(`${year}[/-](0[1-9]|1[0-2])`));
+    const month = monthMatch ? parseInt(monthMatch[1]) : 1;
+
+    // Try to find day near month
+    const dayMatch = s3Key.match(
+      new RegExp(`${year}[/-]${month.toString().padStart(2, '0')}[/-](0[1-9]|[12][0-9]|3[01])`)
+    );
+    const day = dayMatch ? parseInt(dayMatch[1]) : 1;
+
+    return new Date(year, month - 1, day);
+  }
+
+  /**
    * Index a single photo/video
    */
   private async indexPhoto(object: {
@@ -235,9 +263,18 @@ class PhotoIndexerService {
     let width: number | undefined;
     let height: number | undefined;
     let exifData: any;
+    let hasExifDate = false;
 
-    // Try to extract EXIF data for images
-    if (!isVideo) {
+    // PRIORITY 1: Try to extract date from folder structure (fastest, respects user organization)
+    const folderDate = this.extractDateFromPath(object.key);
+    if (folderDate) {
+      createdAt = folderDate;
+      console.log(`Using folder date for ${object.key}: ${folderDate.toISOString().split('T')[0]}`);
+    }
+
+    // PRIORITY 2-3: Try to extract EXIF data for images (only if already exists with EXIF)
+    // During initial indexing, we skip EXIF to be fast. EXIF will be extracted on-demand when photo is viewed.
+    if (!isVideo && existing?.exifData) {
       try {
         const buffer = await s3Client.getObjectBuffer(object.key);
         const exif = await exifr.parse(buffer, {
@@ -257,11 +294,19 @@ class PhotoIndexerService {
         });
 
         if (exif) {
-          // Use EXIF date if available
+          // Use EXIF date if available (overrides folder date for precision)
           if (exif.DateTimeOriginal) {
             createdAt = new Date(exif.DateTimeOriginal);
+            hasExifDate = true;
           } else if (exif.CreateDate) {
             createdAt = new Date(exif.CreateDate);
+            hasExifDate = true;
+          }
+
+          if (hasExifDate) {
+            console.log(
+              `Refined date with EXIF for ${object.key}: ${createdAt.toISOString().split('T')[0]}`
+            );
           }
 
           // Extract camera info
@@ -289,7 +334,7 @@ class PhotoIndexerService {
           }
         }
       } catch (error) {
-        // EXIF parsing failed, use file modified date
+        // EXIF parsing failed, use folder date or file modified date
         console.warn(`Failed to parse EXIF for ${object.key}:`, error);
       }
     }

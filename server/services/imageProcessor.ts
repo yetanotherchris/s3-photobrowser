@@ -1,4 +1,5 @@
 import sharp from 'sharp';
+import exifr from 'exifr';
 import { s3Client } from './s3Client.js';
 import { cacheManager, CacheSize } from './cacheManager.js';
 import { database } from './database.js';
@@ -27,6 +28,13 @@ class ImageProcessorService {
     // Download from S3
     const originalBuffer = await s3Client.getObjectBuffer(s3Key);
 
+    // Extract EXIF data on first download (progressive refinement)
+    // This happens when user views the photo, allowing us to update the date to be more precise
+    const photo = database.getPhotoByS3Key(s3Key);
+    if (photo && !photo.exifData) {
+      await this.extractAndUpdateExif(s3Key, originalBuffer);
+    }
+
     // Process based on size
     let processed: Buffer;
     switch (size) {
@@ -46,13 +54,81 @@ class ImageProcessorService {
 
     // Mark as cached in database (for thumbnails)
     if (size === 'thumbnail') {
-      const photo = database.getPhotoByS3Key(s3Key);
       if (photo) {
         database.markAsCached(photo.id);
       }
     }
 
     return processed;
+  }
+
+  /**
+   * Extract EXIF data and update photo with precise date
+   * This is called on-demand when photo is first downloaded
+   */
+  private async extractAndUpdateExif(s3Key: string, buffer: Buffer): Promise<void> {
+    try {
+      const exif = await exifr.parse(buffer, {
+        pick: [
+          'DateTimeOriginal',
+          'CreateDate',
+          'Make',
+          'Model',
+          'LensModel',
+          'FocalLength',
+          'FNumber',
+          'ISO',
+          'ExposureTime',
+          'latitude',
+          'longitude',
+          'ImageWidth',
+          'ImageHeight',
+        ],
+      });
+
+      if (!exif) return;
+
+      // Extract precise date from EXIF
+      let exifDate: Date | null = null;
+      if (exif.DateTimeOriginal) {
+        exifDate = new Date(exif.DateTimeOriginal);
+      } else if (exif.CreateDate) {
+        exifDate = new Date(exif.CreateDate);
+      }
+
+      // Extract camera info
+      const exifData = {
+        camera: exif.Make && exif.Model ? `${exif.Make} ${exif.Model}` : undefined,
+        lens: exif.LensModel,
+        focalLength: exif.FocalLength,
+        aperture: exif.FNumber,
+        iso: exif.ISO,
+        shutterSpeed: exif.ExposureTime ? `1/${Math.round(1 / exif.ExposureTime)}` : undefined,
+        location:
+          exif.latitude && exif.longitude
+            ? {
+                latitude: exif.latitude,
+                longitude: exif.longitude,
+              }
+            : undefined,
+      };
+
+      // Update database with EXIF data and refined date
+      database.updatePhotoExif(s3Key, {
+        exifData: JSON.stringify(exifData),
+        createdAt: exifDate?.toISOString(),
+        width: exif.ImageWidth,
+        height: exif.ImageHeight,
+      });
+
+      if (exifDate) {
+        console.log(
+          `Refined date with EXIF for ${s3Key}: ${exifDate.toISOString().split('T')[0]}`
+        );
+      }
+    } catch (error) {
+      console.warn(`Failed to extract EXIF for ${s3Key}:`, error);
+    }
   }
 
   /**

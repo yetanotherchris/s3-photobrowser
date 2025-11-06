@@ -221,6 +221,51 @@ class DatabaseService {
   }
 
   /**
+   * Update photo with EXIF data and refined date
+   * Called when photo is downloaded and EXIF is extracted
+   */
+  updatePhotoExif(
+    s3Key: string,
+    data: {
+      exifData?: string;
+      createdAt?: string;
+      width?: number;
+      height?: number;
+    }
+  ): void {
+    const updates: string[] = [];
+    const params: any = {};
+
+    if (data.exifData !== undefined) {
+      updates.push('exifData = @exifData');
+      params.exifData = data.exifData;
+    }
+
+    if (data.createdAt !== undefined) {
+      updates.push('createdAt = @createdAt');
+      params.createdAt = data.createdAt;
+    }
+
+    if (data.width !== undefined) {
+      updates.push('width = @width');
+      params.width = data.width;
+    }
+
+    if (data.height !== undefined) {
+      updates.push('height = @height');
+      params.height = data.height;
+    }
+
+    if (updates.length === 0) return;
+
+    params.s3Key = s3Key;
+
+    const query = `UPDATE photos SET ${updates.join(', ')} WHERE s3Key = @s3Key`;
+    const stmt = this.db.prepare(query);
+    stmt.run(params);
+  }
+
+  /**
    * Delete photo
    */
   deletePhoto(id: string): void {
