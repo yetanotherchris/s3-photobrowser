@@ -1,5 +1,5 @@
 import { s3Client } from './s3Client.js';
-import { database, PhotoMetadata } from './database.js';
+import { database, PhotoMetadata, ExifData } from './database.js';
 import { randomUUID } from 'crypto';
 import exifr from 'exifr';
 import path from 'path';
@@ -213,6 +213,34 @@ class PhotoIndexerService {
   }
 
   /**
+   * Extract date from folder path (e.g., "photos/2024/01/image.jpg" -> 2024-01-01)
+   * Supports patterns like:
+   * - photos/2024/image.jpg -> 2024-01-01
+   * - photos/2024/01/image.jpg -> 2024-01-01
+   * - 2023-12-25/photo.jpg -> 2023-12-25
+   * - travel/2021/europe/pic.jpg -> 2021-01-01
+   */
+  private extractDateFromPath(s3Key: string): Date | null {
+    // Match year (1900-2099) in path
+    const yearMatch = s3Key.match(/\b(19|20)\d{2}\b/);
+    if (!yearMatch) return null;
+
+    const year = parseInt(yearMatch[0]);
+
+    // Try to find month (01-12) near the year
+    const monthMatch = s3Key.match(new RegExp(`${year}[/-](0[1-9]|1[0-2])`));
+    const month = monthMatch ? parseInt(monthMatch[1]) : 1;
+
+    // Try to find day near month
+    const dayMatch = s3Key.match(
+      new RegExp(`${year}[/-]${month.toString().padStart(2, '0')}[/-](0[1-9]|[12][0-9]|3[01])`)
+    );
+    const day = dayMatch ? parseInt(dayMatch[1]) : 1;
+
+    return new Date(year, month - 1, day);
+  }
+
+  /**
    * Index a single photo/video
    */
   private async indexPhoto(object: {
@@ -232,66 +260,102 @@ class PhotoIndexerService {
     }
 
     let createdAt = object.lastModified;
-    let width: number | undefined;
-    let height: number | undefined;
-    let exifData: any;
+    let width: number | undefined = existing?.width;
+    let height: number | undefined = existing?.height;
+    let exif: ExifData | undefined = existing?.exif;
 
-    // Try to extract EXIF data for images
-    if (!isVideo) {
-      try {
-        const buffer = await s3Client.getObjectBuffer(object.key);
-        const exif = await exifr.parse(buffer, {
-          pick: [
-            'DateTimeOriginal',
-            'CreateDate',
-            'Make',
-            'Model',
-            'LensModel',
-            'FocalLength',
-            'FNumber',
-            'ISO',
-            'ExposureTime',
-            'latitude',
-            'longitude',
-          ],
-        });
+    const dateAccuracy = config.indexing.dateAccuracy;
 
-        if (exif) {
-          // Use EXIF date if available
-          if (exif.DateTimeOriginal) {
-            createdAt = new Date(exif.DateTimeOriginal);
-          } else if (exif.CreateDate) {
-            createdAt = new Date(exif.CreateDate);
-          }
+    // Apply date accuracy mode
+    switch (dateAccuracy) {
+      case 'none':
+        // Use S3 LastModified date only (fastest)
+        // createdAt is already set to object.lastModified
+        break;
 
-          // Extract camera info
-          exifData = {
-            camera: exif.Make && exif.Model ? `${exif.Make} ${exif.Model}` : undefined,
-            lens: exif.LensModel,
-            focalLength: exif.FocalLength,
-            aperture: exif.FNumber,
-            iso: exif.ISO,
-            shutterSpeed: exif.ExposureTime ? `1/${Math.round(1 / exif.ExposureTime)}` : undefined,
-            location:
-              exif.latitude && exif.longitude
-                ? {
-                    latitude: exif.latitude,
-                    longitude: exif.longitude,
-                  }
-                : undefined,
-          };
+      case 'folders':
+        // Extract dates from folder structure only (fast, no downloads)
+        const folderDate = this.extractDateFromPath(object.key);
+        if (folderDate) {
+          createdAt = folderDate;
+          console.log(`Using folder date for ${object.key}: ${folderDate.toISOString().split('T')[0]}`);
+        }
+        break;
 
-          // Try to get dimensions from EXIF
-          const size = await exifr.parse(buffer, { pick: ['ImageWidth', 'ImageHeight'] });
-          if (size) {
-            width = size.ImageWidth;
-            height = size.ImageHeight;
+      case 'folders-exif':
+        // Use folders initially, EXIF will be extracted progressively when photos are viewed
+        const folderDateProgressive = this.extractDateFromPath(object.key);
+        if (folderDateProgressive) {
+          createdAt = folderDateProgressive;
+          console.log(`Using folder date for ${object.key}: ${folderDateProgressive.toISOString().split('T')[0]}`);
+        }
+        // EXIF extraction happens in imageProcessor.extractAndUpdateExif()
+        break;
+
+      case 'exif':
+        // Download EXIF upfront during indexing (slow but most accurate)
+        if (!isVideo) {
+          try {
+            // Use partial download to get just EXIF data (first 64KB)
+            const buffer = await s3Client.getPartialObjectBuffer(object.key, 65536);
+            const parsedExif = await exifr.parse(buffer, {
+              pick: [
+                'DateTimeOriginal',
+                'CreateDate',
+                'Make',
+                'Model',
+                'LensModel',
+                'FocalLength',
+                'FNumber',
+                'ISO',
+                'ExposureTime',
+                'latitude',
+                'longitude',
+                'ImageWidth',
+                'ImageHeight',
+              ],
+            });
+
+            if (parsedExif) {
+              // Use EXIF date if available
+              if (parsedExif.DateTimeOriginal) {
+                createdAt = new Date(parsedExif.DateTimeOriginal);
+                console.log(`Using EXIF date for ${object.key}: ${createdAt.toISOString().split('T')[0]}`);
+              } else if (parsedExif.CreateDate) {
+                createdAt = new Date(parsedExif.CreateDate);
+                console.log(`Using EXIF date for ${object.key}: ${createdAt.toISOString().split('T')[0]}`);
+              }
+
+              // Extract dimensions
+              if (parsedExif.ImageWidth && parsedExif.ImageHeight) {
+                width = parsedExif.ImageWidth;
+                height = parsedExif.ImageHeight;
+              }
+
+              // Extract camera info
+              exif = {
+                cameraMake: parsedExif.Make,
+                cameraModel: parsedExif.Model,
+                lensModel: parsedExif.LensModel,
+                focalLength: parsedExif.FocalLength,
+                aperture: parsedExif.FNumber,
+                iso: parsedExif.ISO,
+                shutterSpeed: parsedExif.ExposureTime ? `1/${Math.round(1 / parsedExif.ExposureTime)}` : undefined,
+                exposureTime: parsedExif.ExposureTime,
+                latitude: parsedExif.latitude,
+                longitude: parsedExif.longitude,
+              };
+            }
+          } catch (error) {
+            console.warn(`Failed to extract EXIF for ${object.key}:`, error);
+            // Fallback to folder date if EXIF extraction fails
+            const folderDateFallback = this.extractDateFromPath(object.key);
+            if (folderDateFallback) {
+              createdAt = folderDateFallback;
+            }
           }
         }
-      } catch (error) {
-        // EXIF parsing failed, use file modified date
-        console.warn(`Failed to parse EXIF for ${object.key}:`, error);
-      }
+        break;
     }
 
     const photo: PhotoMetadata = {
@@ -307,7 +371,7 @@ class PhotoIndexerService {
       duration: undefined, // Will be filled by video processor
       createdAt: createdAt.toISOString(),
       modifiedAt: object.lastModified.toISOString(),
-      exifData: exifData ? JSON.stringify(exifData) : undefined,
+      exif,
       cached: existing?.cached || false,
     };
 

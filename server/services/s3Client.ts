@@ -127,6 +127,39 @@ class S3ClientService {
   }
 
   /**
+   * Get partial object buffer (for EXIF extraction)
+   * Downloads only the first N bytes to extract EXIF data without downloading entire file
+   * EXIF data is typically in the first 64KB of JPEG files
+   */
+  async getPartialObjectBuffer(key: string, bytes: number = 65536): Promise<Buffer> {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+        Range: `bytes=0-${bytes - 1}`, // Range is inclusive
+      });
+
+      const response = await this.client.send(command);
+
+      if (!response.Body) {
+        throw new Error('No body in response');
+      }
+
+      const stream = response.Body as Readable;
+      const chunks: Buffer[] = [];
+
+      return new Promise((resolve, reject) => {
+        stream.on('data', (chunk) => chunks.push(chunk));
+        stream.on('error', reject);
+        stream.on('end', () => resolve(Buffer.concat(chunks)));
+      });
+    } catch (error) {
+      console.error(`Error getting partial object ${key}:`, error);
+      throw new Error(`Failed to get partial object: ${key}`);
+    }
+  }
+
+  /**
    * Generate presigned URL for direct access
    */
   async getPresignedUrl(key: string, expiresIn: number = 3600): Promise<string> {

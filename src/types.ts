@@ -11,7 +11,7 @@ export interface PhotoMetadata {
   duration?: number;
   createdAt: string;
   modifiedAt: string;
-  exifData?: ExifData;
+  exif?: ExifData;
   thumbnailUrl: string;
   previewUrl: string;
   originalUrl: string;
@@ -19,16 +19,16 @@ export interface PhotoMetadata {
 }
 
 export interface ExifData {
-  camera?: string;
-  lens?: string;
+  cameraMake?: string;
+  cameraModel?: string;
+  lensModel?: string;
   focalLength?: number;
   aperture?: number;
   iso?: number;
   shutterSpeed?: string;
-  location?: {
-    latitude: number;
-    longitude: number;
-  };
+  exposureTime?: number;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface PhotosResponse {

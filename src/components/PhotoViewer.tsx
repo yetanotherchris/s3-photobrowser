@@ -151,44 +151,46 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
             </div>
           </div>
 
-          {showMetadata && currentPhoto.exifData && (
+          {showMetadata && currentPhoto.exif && (
             <div className="mx-auto mt-4 max-w-7xl rounded-lg bg-black/60 p-4">
               <h4 className="mb-2 font-semibold">EXIF Data</h4>
               <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
-                {currentPhoto.exifData.camera && (
+                {(currentPhoto.exif.cameraMake || currentPhoto.exif.cameraModel) && (
                   <div>
                     <span className="text-gray-400">Camera:</span>{' '}
-                    {currentPhoto.exifData.camera}
+                    {[currentPhoto.exif.cameraMake, currentPhoto.exif.cameraModel]
+                      .filter(Boolean)
+                      .join(' ')}
                   </div>
                 )}
-                {currentPhoto.exifData.lens && (
+                {currentPhoto.exif.lensModel && (
                   <div>
                     <span className="text-gray-400">Lens:</span>{' '}
-                    {currentPhoto.exifData.lens}
+                    {currentPhoto.exif.lensModel}
                   </div>
                 )}
-                {currentPhoto.exifData.focalLength && (
+                {currentPhoto.exif.focalLength && (
                   <div>
                     <span className="text-gray-400">Focal Length:</span>{' '}
-                    {currentPhoto.exifData.focalLength}mm
+                    {currentPhoto.exif.focalLength}mm
                   </div>
                 )}
-                {currentPhoto.exifData.aperture && (
+                {currentPhoto.exif.aperture && (
                   <div>
                     <span className="text-gray-400">Aperture:</span> f/
-                    {currentPhoto.exifData.aperture}
+                    {currentPhoto.exif.aperture}
                   </div>
                 )}
-                {currentPhoto.exifData.iso && (
+                {currentPhoto.exif.iso && (
                   <div>
                     <span className="text-gray-400">ISO:</span>{' '}
-                    {currentPhoto.exifData.iso}
+                    {currentPhoto.exif.iso}
                   </div>
                 )}
-                {currentPhoto.exifData.shutterSpeed && (
+                {currentPhoto.exif.shutterSpeed && (
                   <div>
                     <span className="text-gray-400">Shutter:</span>{' '}
-                    {currentPhoto.exifData.shutterSpeed}s
+                    {currentPhoto.exif.shutterSpeed}s
                   </div>
                 )}
               </div>
