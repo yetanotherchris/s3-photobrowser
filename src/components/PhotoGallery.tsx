@@ -166,7 +166,6 @@ export const PhotoGallery: React.FC = () => {
       <div className="flex-1 overflow-hidden">
         <div className="border-b border-gray-200 bg-white p-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-gray-800">Photo Browser</h1>
             <button
               onClick={handleRefresh}
               disabled={refreshing}
@@ -174,6 +173,7 @@ export const PhotoGallery: React.FC = () => {
             >
               {refreshing ? 'Refreshing...' : 'Refresh'}
             </button>
+            <h1 className="text-2xl font-bold text-gray-800">Photo Browser</h1>
           </div>
           <p className="mt-1 text-sm text-gray-600">
             {photos.length} photos loaded
