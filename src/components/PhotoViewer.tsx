@@ -26,6 +26,17 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
   const currentPhoto = photos[currentIndex];
   const isVideo = currentPhoto?.type === 'video';
 
+  // Check if there's meaningful EXIF data to display
+  const hasExifData = currentPhoto?.exif && (
+    currentPhoto.exif.cameraMake ||
+    currentPhoto.exif.cameraModel ||
+    currentPhoto.exif.lensModel ||
+    currentPhoto.exif.focalLength ||
+    currentPhoto.exif.aperture ||
+    currentPhoto.exif.iso ||
+    currentPhoto.exif.shutterSpeed
+  );
+
   useEffect(() => {
     setCurrentIndex(initialIndex);
   }, [initialIndex]);
@@ -191,9 +202,9 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
             <div className="flex gap-2">
               <button
                 onClick={() => setShowMetadata(!showMetadata)}
-                disabled={!currentPhoto.exif}
+                disabled={!hasExifData}
                 className={`rounded-lg px-4 py-2 text-sm transition-colors ${
-                  !currentPhoto.exif
+                  !hasExifData
                     ? 'cursor-not-allowed bg-white/5 text-gray-500'
                     : 'bg-white/10 hover:bg-white/20'
                 }`}
@@ -215,7 +226,7 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
             </div>
           </div>
 
-          {showMetadata && currentPhoto.exif && (
+          {showMetadata && hasExifData && (
             <div className="mx-auto mt-4 max-w-7xl rounded-lg bg-black/60 p-4">
               <h4 className="mb-2 font-semibold">EXIF Data</h4>
               <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
