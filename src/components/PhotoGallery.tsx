@@ -60,6 +60,38 @@ export const PhotoGallery: React.FC = () => {
     return () => clearInterval(interval);
   }, [indexingStatus?.isIndexing]);
 
+  // Keyboard navigation for PageUp/PageDown
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const scrollableDiv = document.getElementById('scrollableDiv');
+      if (!scrollableDiv) return;
+
+      // PageDown: Skip forward ~50 photos
+      if (event.key === 'PageDown') {
+        event.preventDefault();
+        // Estimate: ~300px per row of ~6 photos, so ~2500px for 50 photos
+        const skipAmount = 2500;
+        scrollableDiv.scrollBy({
+          top: skipAmount,
+          behavior: 'smooth',
+        });
+      }
+
+      // PageUp: Skip backward ~50 photos
+      if (event.key === 'PageUp') {
+        event.preventDefault();
+        const skipAmount = 2500;
+        scrollableDiv.scrollBy({
+          top: -skipAmount,
+          behavior: 'smooth',
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const loadPhotos = async () => {
     try {
       setLoading(true);
