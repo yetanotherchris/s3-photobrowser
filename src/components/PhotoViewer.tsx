@@ -21,7 +21,7 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [showMetadata, setShowMetadata] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [showToast, setShowToast] = useState(false);
 
   const currentPhoto = photos[currentIndex];
   const isVideo = currentPhoto?.type === 'video';
@@ -47,24 +47,6 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, currentIndex, photos.length, onClose]);
 
-  const handleDelete = async () => {
-    if (!deleteConfirm) {
-      setDeleteConfirm(true);
-      setTimeout(() => setDeleteConfirm(false), 3000);
-      return;
-    }
-
-    try {
-      await api.deletePhoto(currentPhoto.id);
-      // Close and notify parent to refresh
-      onClose();
-      window.location.reload();
-    } catch (error) {
-      console.error('Failed to delete photo:', error);
-      alert('Failed to delete photo');
-    }
-  };
-
   const handleDownload = () => {
     downloadFile(currentPhoto.originalUrl, currentPhoto.filename);
   };
@@ -73,7 +55,8 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
     const url = `${window.location.origin}${currentPhoto.originalUrl}`;
     const success = await copyToClipboard(url);
     if (success) {
-      alert('Link copied to clipboard');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
     }
   };
 
@@ -181,7 +164,7 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
           )}
 
           {/* Video player */}
-          <div className="h-full w-full max-w-7xl px-16">
+          <div className="h-full w-full max-w-7xl px-16 pb-32">
             <VideoPlayer url={currentPhoto.originalUrl} className="h-full w-full" />
           </div>
         </div>
@@ -228,16 +211,6 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
                 className="rounded-lg bg-white/10 px-4 py-2 text-sm transition-colors hover:bg-white/20"
               >
                 Copy Link
-              </button>
-              <button
-                onClick={handleDelete}
-                className={`rounded-lg px-4 py-2 text-sm transition-colors ${
-                  deleteConfirm
-                    ? 'bg-red-600 hover:bg-red-700'
-                    : 'bg-white/10 hover:bg-white/20'
-                }`}
-              >
-                {deleteConfirm ? 'Confirm Delete?' : 'Delete'}
               </button>
             </div>
           </div>
@@ -287,6 +260,18 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Toast notification */}
+      {showToast && (
+        <div className="fixed right-4 top-4 z-[200] animate-slide-in-right rounded-lg bg-green-600 px-6 py-3 text-white shadow-lg transition-all duration-300">
+          <div className="flex items-center gap-2">
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span>Link copied to clipboard</span>
+          </div>
         </div>
       )}
     </>
