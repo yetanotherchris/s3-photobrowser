@@ -289,14 +289,20 @@ Ensure FFmpeg is installed:
 
 ## Testing
 
-The application includes comprehensive unit and integration tests using Jest and LocalStack.
+The application includes comprehensive unit, integration, and end-to-end tests.
+
+### Test Types
+
+1. **Unit & Integration Tests** - Jest with LocalStack
+2. **E2E Tests** - Playwright (headless mode)
 
 ### Running Tests
 
 **Prerequisites:**
-- Docker and Docker Compose (for integration tests)
+- Docker and Docker Compose (for LocalStack)
+- Node.js 18+ (for running tests)
 
-**Quick Start:**
+#### Unit & Integration Tests
 
 ```bash
 # Automated setup (recommended)
@@ -312,20 +318,49 @@ npm run test:watch         # Watch mode
 npm run test:coverage      # With coverage report
 ```
 
-**Manual Setup:**
+#### E2E Tests (Playwright)
+
+End-to-end tests run in **headless mode by default** and test the complete application flow including the Timeline date scrollbar.
 
 ```bash
-# Start LocalStack for integration tests
-docker compose -f docker-compose.localstack.yml up -d localstack
+# Run E2E tests with LocalStack (recommended)
+npm run test:e2e:localstack
 
-# Run tests
-npm test
+# Run E2E tests only (requires running dev server)
+npm run test:e2e
 
-# Stop LocalStack
-docker compose -f docker-compose.localstack.yml down
+# Run with Playwright UI (interactive mode)
+npm run test:e2e:ui
+
+# Run in headed mode (see the browser)
+npm run test:e2e:headed
+
+# Debug tests (step through execution)
+npm run test:e2e:debug
 ```
 
-For detailed testing documentation, see [test/README.md](test/README.md).
+**Manual E2E Test Setup:**
+
+```bash
+# Start LocalStack
+docker compose -f docker-compose.test.yml up -d localstack
+
+# Generate test photos
+npm run test:generate-photos
+
+# Setup test data
+npm run test:setup
+
+# Run E2E tests
+npm run test:e2e
+
+# Cleanup
+npm run test:cleanup
+```
+
+For detailed testing documentation, see:
+- [test/README.md](test/README.md) - Unit & Integration tests
+- [e2e/README.md](e2e/README.md) - E2E tests with Playwright
 
 ## Performance Tips
 
