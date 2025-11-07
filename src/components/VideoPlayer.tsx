@@ -22,6 +22,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [seeking, setSeeking] = useState(false);
   const [duration, setDuration] = useState(0);
   const [showControls, setShowControls] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [buffering, setBuffering] = useState(false);
 
   const handlePlayPause = () => {
     setPlaying(!playing);
@@ -59,6 +62,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setDuration(duration);
   };
 
+  const handleReady = () => {
+    setLoading(false);
+    setError(null);
+  };
+
+  const handleError = (e: any) => {
+    console.error('Video playback error:', e);
+    setLoading(false);
+    setError('Failed to load video. Please try again.');
+  };
+
+  const handleBuffer = () => {
+    setBuffering(true);
+  };
+
+  const handleBufferEnd = () => {
+    setBuffering(false);
+  };
+
   const formatTime = (seconds: number) => {
     const date = new Date(seconds * 1000);
     const hh = date.getUTCHours();
@@ -86,6 +108,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         muted={muted}
         onProgress={handleProgress}
         onDuration={handleDuration}
+        onReady={handleReady}
+        onError={handleError}
+        onBuffer={handleBuffer}
+        onBufferEnd={handleBufferEnd}
         controls={false}
         config={{
           file: {
@@ -187,7 +213,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       </div>
 
       {/* Center play button overlay */}
-      {!playing && (
+      {!playing && !loading && !error && (
         <button
           onClick={handlePlayPause}
           className="absolute left-1/2 top-1/2 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-red-600 transition-transform hover:scale-110"
@@ -197,6 +223,35 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             <path d="M8 5v14l11-7z" />
           </svg>
         </button>
+      )}
+
+      {/* Loading indicator */}
+      {(loading || buffering) && (
+        <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-4">
+          <div className="h-16 w-16 animate-spin rounded-full border-4 border-white/30 border-t-white"></div>
+          <p className="text-lg text-white">
+            {loading ? 'Loading video...' : 'Buffering...'}
+          </p>
+        </div>
+      )}
+
+      {/* Error message */}
+      {error && (
+        <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-4 text-center">
+          <svg className="h-16 w-16 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-lg text-white">{error}</p>
+          <button
+            onClick={() => {
+              setError(null);
+              setLoading(true);
+            }}
+            className="rounded-lg bg-red-600 px-6 py-2 text-white transition-colors hover:bg-red-700"
+          >
+            Retry
+          </button>
+        </div>
       )}
     </div>
   );
