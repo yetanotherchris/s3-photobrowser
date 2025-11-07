@@ -11,24 +11,15 @@ export const Timeline: React.FC<TimelineProps> = ({ dates, onYearClick }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Generate years from 1970 to current year
+  // Only show years that have photos
   const years = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const yearList: number[] = [];
-    for (let year = currentYear; year >= 1970; year--) {
-      yearList.push(year);
-    }
-    return yearList;
-  }, []);
-
-  // Get years that have photos
-  const yearsWithPhotos = useMemo(() => {
     const yearSet = new Set<number>();
     dates.forEach(dateCount => {
       const year = new Date(dateCount.date).getFullYear();
       yearSet.add(year);
     });
-    return yearSet;
+    // Convert to sorted array (newest first)
+    return Array.from(yearSet).sort((a, b) => b - a);
   }, [dates]);
 
   // Track scroll position of main photo gallery
@@ -41,10 +32,22 @@ export const Timeline: React.FC<TimelineProps> = ({ dates, onYearClick }) => {
       const dateGroups = document.querySelectorAll('[id^="date-"]');
       let foundYear: number | null = null;
 
+      // Find the date group that's most visible in the viewport
+      // We'll use the top 1/3 of the viewport as the detection zone
+      const viewportHeight = window.innerHeight;
+      const detectionZone = viewportHeight / 3;
+
       for (const group of Array.from(dateGroups)) {
         const rect = group.getBoundingClientRect();
-        // Check if this date group is visible in the viewport
-        if (rect.top <= 150 && rect.bottom >= 0) {
+        // Check if this date group intersects with the top detection zone
+        if (rect.top >= 0 && rect.top <= detectionZone) {
+          const dateId = group.id.replace('date-', '');
+          const year = new Date(dateId).getFullYear();
+          foundYear = year;
+          break;
+        }
+        // Also check if the group is already scrolled past but still visible
+        if (rect.top < 0 && rect.bottom > detectionZone) {
           const dateId = group.id.replace('date-', '');
           const year = new Date(dateId).getFullYear();
           foundYear = year;
@@ -82,32 +85,22 @@ export const Timeline: React.FC<TimelineProps> = ({ dates, onYearClick }) => {
   return (
     <div
       ref={scrollContainerRef}
-      className="fixed right-0 top-0 z-20 flex h-screen w-16 flex-col items-center overflow-y-auto bg-gradient-to-l from-gray-50 to-transparent py-4 hover:w-20 transition-all duration-200"
-      style={{
-        scrollbarWidth: 'thin',
-        scrollbarColor: '#9CA3AF transparent',
-      }}
+      className="fixed right-0 top-0 z-20 flex h-screen w-16 flex-col items-center justify-center bg-gradient-to-l from-gray-50 to-transparent py-4 hover:w-20 transition-all duration-200"
     >
-      <div ref={timelineRef} className="relative flex flex-col items-center space-y-8">
+      <div ref={timelineRef} className="relative flex flex-col items-center space-y-4">
         {years.map((year) => {
-          const hasPhotos = yearsWithPhotos.has(year);
           const isActive = currentYear === year;
 
           return (
             <button
               key={year}
               onClick={() => handleYearClick(year)}
-              disabled={!hasPhotos}
-              className={`group relative flex h-12 w-full items-center justify-center transition-all duration-150 ${
-                hasPhotos ? 'cursor-pointer' : 'cursor-default opacity-30'
-              } ${
+              className={`group relative flex h-10 w-full items-center justify-center transition-all duration-150 cursor-pointer ${
                 isActive
                   ? 'scale-125 font-bold text-blue-600'
-                  : hasPhotos
-                  ? 'text-gray-700 hover:scale-110 hover:text-blue-500'
-                  : 'text-gray-400'
+                  : 'text-gray-700 hover:scale-110 hover:text-blue-500'
               }`}
-              title={hasPhotos ? `${year}` : `${year} (no photos)`}
+              title={`${year}`}
             >
               <div className="flex items-center">
                 {/* Year label */}
@@ -121,7 +114,7 @@ export const Timeline: React.FC<TimelineProps> = ({ dates, onYearClick }) => {
                 )}
 
                 {/* Dot for years with photos */}
-                {hasPhotos && !isActive && (
+                {!isActive && (
                   <div className="absolute -left-1 h-1 w-1 rounded-full bg-gray-400 group-hover:bg-blue-500" />
                 )}
               </div>
