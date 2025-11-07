@@ -208,7 +208,12 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
             <div className="flex gap-2">
               <button
                 onClick={() => setShowMetadata(!showMetadata)}
-                className="rounded-lg bg-white/10 px-4 py-2 text-sm transition-colors hover:bg-white/20"
+                disabled={!currentPhoto.exif}
+                className={`rounded-lg px-4 py-2 text-sm transition-colors ${
+                  !currentPhoto.exif
+                    ? 'cursor-not-allowed bg-white/5 text-gray-500'
+                    : 'bg-white/10 hover:bg-white/20'
+                }`}
               >
                 Info
               </button>
