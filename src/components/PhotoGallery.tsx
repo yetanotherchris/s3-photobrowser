@@ -60,36 +60,79 @@ export const PhotoGallery: React.FC = () => {
     return () => clearInterval(interval);
   }, [indexingStatus?.isIndexing]);
 
-  // Keyboard navigation for PageUp/PageDown
+  // Keyboard navigation for PageUp/PageDown with continuous scrolling
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const scrollableDiv = document.getElementById('scrollableDiv');
-      if (!scrollableDiv) return;
+    let scrollIntervalId: number | null = null;
+    let isScrolling = false;
+    let scrollDirection = 0; // -1 for up, 1 for down, 0 for none
 
-      // PageDown: Skip forward ~50 photos
-      if (event.key === 'PageDown') {
+    const startContinuousScroll = (direction: number) => {
+      const scrollableDiv = document.getElementById('scrollableDiv');
+      if (!scrollableDiv || isScrolling) return;
+
+      isScrolling = true;
+      scrollDirection = direction;
+
+      // Scroll speed: 15px per frame at ~60fps
+      const scrollSpeed = 15;
+
+      const scroll = () => {
+        if (!isScrolling) return;
+
+        const scrollableDiv = document.getElementById('scrollableDiv');
+        if (scrollableDiv) {
+          scrollableDiv.scrollBy({
+            top: scrollSpeed * scrollDirection,
+            behavior: 'instant',
+          });
+        }
+
+        scrollIntervalId = requestAnimationFrame(scroll);
+      };
+
+      scroll();
+    };
+
+    const stopContinuousScroll = () => {
+      isScrolling = false;
+      scrollDirection = 0;
+      if (scrollIntervalId !== null) {
+        cancelAnimationFrame(scrollIntervalId);
+        scrollIntervalId = null;
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Prevent repeat events from being processed
+      if (event.repeat && (event.key === 'PageDown' || event.key === 'PageUp')) {
         event.preventDefault();
-        // Estimate: ~300px per row of ~6 photos, so ~2500px for 50 photos
-        const skipAmount = 2500;
-        scrollableDiv.scrollBy({
-          top: skipAmount,
-          behavior: 'smooth',
-        });
+        return;
       }
 
-      // PageUp: Skip backward ~50 photos
-      if (event.key === 'PageUp') {
+      if (event.key === 'PageDown') {
         event.preventDefault();
-        const skipAmount = 2500;
-        scrollableDiv.scrollBy({
-          top: -skipAmount,
-          behavior: 'smooth',
-        });
+        startContinuousScroll(1);
+      } else if (event.key === 'PageUp') {
+        event.preventDefault();
+        startContinuousScroll(-1);
+      }
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key === 'PageDown' || event.key === 'PageUp') {
+        event.preventDefault();
+        stopContinuousScroll();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      stopContinuousScroll();
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
   }, []);
 
   const loadPhotos = async () => {
@@ -195,6 +238,8 @@ export const PhotoGallery: React.FC = () => {
     <div className="flex h-screen">
       <DateNavigator dates={dates} />
 
+      <Timeline dates={dates} onYearClick={handleYearClick} />
+
       <div className="flex-1 overflow-hidden">
         <div className="border-b border-gray-200 bg-white p-4">
           <div className="flex items-center justify-between">
@@ -214,7 +259,7 @@ export const PhotoGallery: React.FC = () => {
 
         {indexingStatus && <IndexingBanner status={indexingStatus} />}
 
-        <div id="scrollableDiv" className="h-[calc(100vh-80px)] overflow-y-auto p-6 pr-20">
+        <div id="scrollableDiv" className="h-[calc(100vh-80px)] overflow-y-auto p-6">
           <InfiniteScroll
             dataLength={photos.length}
             next={loadMore}
@@ -247,8 +292,6 @@ export const PhotoGallery: React.FC = () => {
           </InfiniteScroll>
         </div>
       </div>
-
-      <Timeline dates={dates} onYearClick={handleYearClick} />
 
       {selectedPhotoIndex !== null && (
         <PhotoViewer

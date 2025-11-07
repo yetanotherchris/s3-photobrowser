@@ -85,7 +85,7 @@ export const Timeline: React.FC<TimelineProps> = ({ dates, onYearClick }) => {
   return (
     <div
       ref={scrollContainerRef}
-      className="fixed right-0 top-0 z-20 flex h-screen w-16 flex-col items-center justify-center bg-gradient-to-l from-gray-50 to-transparent py-4 hover:w-20 transition-all duration-200"
+      className="flex h-screen w-20 flex-col items-center justify-center bg-white border-r border-gray-200 py-4 shadow-sm"
     >
       <div ref={timelineRef} className="relative flex flex-col items-center space-y-4">
         {years.map((year) => {
