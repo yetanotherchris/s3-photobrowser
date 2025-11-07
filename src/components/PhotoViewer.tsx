@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import Lightbox from 'yet-another-react-lightbox';
-import Video from 'yet-another-react-lightbox/plugins/video';
 import 'yet-another-react-lightbox/styles.css';
 import { PhotoMetadata } from '../types';
 import { formatFileSize, formatDuration, downloadFile, copyToClipboard } from '../utils';
 import { api } from '../api';
+import { VideoPlayer } from './VideoPlayer';
 
 interface PhotoViewerProps {
   photos: PhotoMetadata[];
@@ -24,10 +24,28 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   const currentPhoto = photos[currentIndex];
+  const isVideo = currentPhoto?.type === 'video';
 
   useEffect(() => {
     setCurrentIndex(initialIndex);
   }, [initialIndex]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isOpen) return;
+
+      if (e.key === 'ArrowLeft' && currentIndex > 0) {
+        setCurrentIndex(currentIndex - 1);
+      } else if (e.key === 'ArrowRight' && currentIndex < photos.length - 1) {
+        setCurrentIndex(currentIndex + 1);
+      } else if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, currentIndex, photos.length, onClose]);
 
   const handleDelete = async () => {
     if (!deleteConfirm) {
@@ -59,49 +77,115 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
     }
   };
 
-  // Convert photos to lightbox slides
-  const slides = photos.map((photo) => {
-    if (photo.type === 'video') {
-      return {
-        type: 'video' as const,
-        sources: [
-          {
-            src: photo.originalUrl,
-            type: photo.mimeType,
-          },
-        ],
-        width: photo.width || 1920,
-        height: photo.height || 1080,
-      };
+  const handlePrevious = () => {
+    if (currentIndex > 0) {
+      setCurrentIndex(currentIndex - 1);
     }
+  };
 
-    return {
+  const handleNext = () => {
+    if (currentIndex < photos.length - 1) {
+      setCurrentIndex(currentIndex + 1);
+    }
+  };
+
+  // Convert photos to lightbox slides (images only)
+  const slides = photos
+    .filter((photo) => photo.type !== 'video')
+    .map((photo) => ({
       src: photo.previewUrl,
       alt: photo.filename,
       width: photo.width || 1920,
       height: photo.height || 1080,
-    };
-  });
+    }));
+
+  // Find the lightbox index for the current photo (if it's an image)
+  const lightboxIndex = !isVideo
+    ? photos.slice(0, currentIndex).filter((p) => p.type !== 'video').length
+    : 0;
 
   return (
     <>
-      <Lightbox
-        open={isOpen}
-        close={onClose}
-        slides={slides}
-        index={currentIndex}
-        plugins={[Video]}
-        on={{
-          view: ({ index }) => setCurrentIndex(index),
-        }}
-        carousel={{
-          finite: false,
-        }}
-        render={{
-          buttonPrev: photos.length > 1 ? undefined : () => null,
-          buttonNext: photos.length > 1 ? undefined : () => null,
-        }}
-      />
+      {/* Lightbox for images only */}
+      {!isVideo && (
+        <Lightbox
+          open={isOpen}
+          close={onClose}
+          slides={slides}
+          index={lightboxIndex}
+          on={{
+            view: ({ index }) => {
+              // Map lightbox index back to photos array index
+              let photoIndex = 0;
+              let lightboxCount = 0;
+              while (lightboxCount < index && photoIndex < photos.length) {
+                if (photos[photoIndex].type !== 'video') {
+                  lightboxCount++;
+                }
+                photoIndex++;
+              }
+              // Find the next non-video photo
+              while (photoIndex < photos.length && photos[photoIndex].type === 'video') {
+                photoIndex++;
+              }
+              setCurrentIndex(photoIndex);
+            },
+          }}
+          carousel={{
+            finite: false,
+          }}
+          render={{
+            buttonPrev: photos.length > 1 ? undefined : () => null,
+            buttonNext: photos.length > 1 ? undefined : () => null,
+          }}
+        />
+      )}
+
+      {/* Custom video viewer */}
+      {isVideo && isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black">
+          {/* Close button */}
+          <button
+            onClick={onClose}
+            className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+            aria-label="Close"
+          >
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          {/* Navigation buttons */}
+          {currentIndex > 0 && (
+            <button
+              onClick={handlePrevious}
+              className="absolute left-4 top-1/2 z-10 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+              aria-label="Previous"
+            >
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+          )}
+
+          {currentIndex < photos.length - 1 && (
+            <button
+              onClick={handleNext}
+              className="absolute right-4 top-1/2 z-10 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+              aria-label="Next"
+            >
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          )}
+
+          {/* Video player */}
+          <div className="h-full w-full max-w-7xl px-16">
+            <VideoPlayer url={currentPhoto.originalUrl} className="h-full w-full" />
+          </div>
+        </div>
+      )}
 
       {isOpen && (
         <div className="fixed bottom-0 left-0 right-0 z-[100] bg-black/80 p-4 text-white">
