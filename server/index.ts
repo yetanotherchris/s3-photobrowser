@@ -26,8 +26,81 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 // API Routes
 
 /**
+ * GET /api/photos/indexing-status
+ * Get background indexing status
+ * IMPORTANT: This must come before /api/photos/:photoId
+ */
+app.get('/api/photos/indexing-status', (_req: Request, res: Response) => {
+  try {
+    const status = photoIndexer.getBackgroundIndexingStatus();
+    res.json(status);
+  } catch (error) {
+    console.error('Error getting indexing status:', error);
+    res.status(500).json({ error: 'Failed to get indexing status' });
+  }
+});
+
+/**
+ * GET /api/photos/dates
+ * Get all dates with photo counts
+ * IMPORTANT: This must come before /api/photos/:photoId
+ */
+app.get('/api/photos/dates', async (_req: Request, res: Response) => {
+  try {
+    const dates = database.getDateCounts();
+    res.json({ dates });
+  } catch (error) {
+    console.error('Error getting dates:', error);
+    res.status(500).json({ error: 'Failed to get dates' });
+  }
+});
+
+/**
+ * POST /api/photos/refresh
+ * Re-index S3 bucket
+ */
+app.post('/api/photos/refresh', async (_req: Request, res: Response) => {
+  try {
+    const result = await photoIndexer.indexAllPhotos();
+
+    res.json({
+      success: true,
+      indexed: result.indexed,
+      total: result.total,
+      failed: result.failed,
+      backgroundIndexing: result.backgroundIndexing,
+    });
+  } catch (error) {
+    console.error('Error refreshing photos:', error);
+    res.status(500).json({ error: 'Failed to refresh photos' });
+  }
+});
+
+/**
+ * POST /api/photos/index-next
+ * Index next batch of unindexed photos
+ */
+app.post('/api/photos/index-next', async (req: Request, res: Response) => {
+  try {
+    const batchSize = parseInt(req.query.batchSize as string) || 100;
+    const result = await photoIndexer.indexNextBatch(batchSize);
+
+    res.json({
+      success: true,
+      indexed: result.indexed,
+      total: result.total,
+      failed: result.failed,
+    });
+  } catch (error) {
+    console.error('Error indexing next batch:', error);
+    res.status(500).json({ error: 'Failed to index next batch' });
+  }
+});
+
+/**
  * GET /api/photos
  * Get photos with pagination and filters
+ * IMPORTANT: This must come before /api/photos/:photoId
  */
 app.get('/api/photos', async (req: Request, res: Response) => {
   try {
@@ -72,6 +145,7 @@ app.get('/api/photos', async (req: Request, res: Response) => {
 /**
  * GET /api/photos/:photoId
  * Get single photo metadata
+ * IMPORTANT: This must come after specific routes like /api/photos/dates
  */
 app.get('/api/photos/:photoId', async (req: Request, res: Response) => {
   try {
@@ -158,76 +232,6 @@ app.delete('/api/photos/:photoId', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error deleting photo:', error);
     res.status(500).json({ error: 'Failed to delete photo' });
-  }
-});
-
-/**
- * POST /api/photos/refresh
- * Re-index S3 bucket
- */
-app.post('/api/photos/refresh', async (_req: Request, res: Response) => {
-  try {
-    const result = await photoIndexer.indexAllPhotos();
-
-    res.json({
-      success: true,
-      indexed: result.indexed,
-      total: result.total,
-      failed: result.failed,
-      backgroundIndexing: result.backgroundIndexing,
-    });
-  } catch (error) {
-    console.error('Error refreshing photos:', error);
-    res.status(500).json({ error: 'Failed to refresh photos' });
-  }
-});
-
-/**
- * GET /api/photos/indexing-status
- * Get background indexing status
- */
-app.get('/api/photos/indexing-status', (_req: Request, res: Response) => {
-  try {
-    const status = photoIndexer.getBackgroundIndexingStatus();
-    res.json(status);
-  } catch (error) {
-    console.error('Error getting indexing status:', error);
-    res.status(500).json({ error: 'Failed to get indexing status' });
-  }
-});
-
-/**
- * POST /api/photos/index-next
- * Index next batch of unindexed photos
- */
-app.post('/api/photos/index-next', async (req: Request, res: Response) => {
-  try {
-    const batchSize = parseInt(req.query.batchSize as string) || 100;
-    const result = await photoIndexer.indexNextBatch(batchSize);
-
-    res.json({
-      success: true,
-      indexed: result.indexed,
-      total: result.total,
-      failed: result.failed,
-    });
-  } catch (error) {
-    console.error('Error indexing next batch:', error);
-    res.status(500).json({ error: 'Failed to index next batch' });
-  }
-});
-
-/**
- * GET /api/photos/dates
- * Get all dates with photo counts
- */
-app.get('/api/photos/dates', async (_req: Request, res: Response) => {
-  try {
-    const dates = database.getDateCounts();
-    res.json({ dates });
-  } catch (error) {
-    console.error('Error getting dates:', error);
-    res.status(500).json({ error: 'Failed to get dates' });
   }
 });
 
