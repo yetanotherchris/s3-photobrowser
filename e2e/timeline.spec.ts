@@ -220,7 +220,7 @@ test.describe('Timeline Date Scrollbar', () => {
       }
 
       // Every photo year should be represented in the timeline as enabled
-      for (const photoYear of photoYears) {
+      for (const photoYear of Array.from(photoYears)) {
         expect(timelineYears.has(photoYear)).toBe(true);
       }
     }
