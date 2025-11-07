@@ -158,6 +158,11 @@ test/test-data/*.mov
 test/localstack-data/
 test/fixtures/photos/
 
+# Playwright E2E test results
+test-results/
+playwright-report/
+playwright/.cache/
+
 # IDE
 .vscode/*
 !.vscode/extensions.json
