@@ -24,7 +24,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [showControls, setShowControls] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [buffering, setBuffering] = useState(false);
 
   const handlePlayPause = () => {
     setPlaying(!playing);
@@ -73,14 +72,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setError('Failed to load video. Please try again.');
   };
 
-  const handleBuffer = () => {
-    setBuffering(true);
-  };
-
-  const handleBufferEnd = () => {
-    setBuffering(false);
-  };
-
   const formatTime = (seconds: number) => {
     const date = new Date(seconds * 1000);
     const hh = date.getUTCHours();
@@ -110,8 +101,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         onDuration={handleDuration}
         onReady={handleReady}
         onError={handleError}
-        onBuffer={handleBuffer}
-        onBufferEnd={handleBufferEnd}
         controls={false}
         config={{
           file: {
@@ -226,12 +215,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       )}
 
       {/* Loading indicator */}
-      {(loading || buffering) && (
+      {loading && (
         <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-4">
           <div className="h-16 w-16 animate-spin rounded-full border-4 border-white/30 border-t-white"></div>
-          <p className="text-lg text-white">
-            {loading ? 'Loading video...' : 'Buffering...'}
-          </p>
+          <p className="text-lg text-white">Loading video...</p>
         </div>
       )}
 
