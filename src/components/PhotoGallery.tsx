@@ -6,7 +6,6 @@ import { groupPhotosByDate } from '../utils';
 import { DateGroup } from './DateGroup';
 import { DateNavigator } from './DateNavigator';
 import { PhotoViewer } from './PhotoViewer';
-import { Timeline } from './Timeline';
 import { IndexingBanner } from './IndexingBanner';
 
 export const PhotoGallery: React.FC = () => {
@@ -204,12 +203,6 @@ export const PhotoGallery: React.FC = () => {
     setSelectedPhotoIndex(globalIndex);
   };
 
-  const handleYearClick = (year: number) => {
-    // The Timeline component handles the scrolling internally,
-    // but we can add additional logic here if needed in the future
-    console.log('Navigating to year:', year);
-  };
-
   if (loading && photos.length === 0) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -237,8 +230,6 @@ export const PhotoGallery: React.FC = () => {
   return (
     <div className="flex h-screen">
       <DateNavigator dates={dates} />
-
-      <Timeline dates={dates} onYearClick={handleYearClick} />
 
       <div className="flex-1 overflow-hidden">
         <div className="border-b border-gray-200 bg-white p-4">

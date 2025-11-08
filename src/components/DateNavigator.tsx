@@ -66,8 +66,22 @@ export const DateNavigator: React.FC<DateNavigatorProps> = ({
 
   const scrollToMonth = (firstDate: string) => {
     const element = document.getElementById(`date-${firstDate}`);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const scrollableDiv = document.getElementById('scrollableDiv');
+
+    if (element && scrollableDiv) {
+      // Calculate the position of the element relative to the scrollable container
+      const elementRect = element.getBoundingClientRect();
+      const containerRect = scrollableDiv.getBoundingClientRect();
+      const scrollTop = scrollableDiv.scrollTop;
+
+      // Calculate target scroll position (element position + current scroll - container top)
+      const targetScroll = elementRect.top - containerRect.top + scrollTop;
+
+      // Scroll to the target position
+      scrollableDiv.scrollTo({
+        top: targetScroll,
+        behavior: 'smooth'
+      });
     }
   };
 
