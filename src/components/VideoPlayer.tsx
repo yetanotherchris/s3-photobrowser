@@ -29,9 +29,23 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setPlaying(!playing);
   };
 
-  const handleProgress = (state: { played: number; playedSeconds: number; loaded: number; loadedSeconds: number }) => {
+  const handleProgress = (state: {
+    played: number;
+    playedSeconds: number;
+    loaded: number;
+    loadedSeconds: number;
+  }) => {
     if (!seeking) {
       setPlayed(state.played);
+    }
+
+    // Update duration from progress if not already set
+    // This avoids using the onDuration prop which causes React warnings
+    if (duration === 0 && state.playedSeconds > 0) {
+      const calculatedDuration = state.playedSeconds / state.played;
+      if (isFinite(calculatedDuration) && calculatedDuration > 0) {
+        setDuration(calculatedDuration);
+      }
     }
   };
 
@@ -55,10 +69,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const handleToggleMuted = () => {
     setMuted(!muted);
-  };
-
-  const handleDuration = (duration: number) => {
-    setDuration(duration);
   };
 
   const handleReady = () => {
@@ -98,7 +108,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         volume={volume}
         muted={muted}
         onProgress={handleProgress}
-        onDuration={handleDuration}
         onReady={handleReady}
         onError={handleError}
         controls={false}
